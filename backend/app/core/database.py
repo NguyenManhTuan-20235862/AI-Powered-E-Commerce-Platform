@@ -9,11 +9,19 @@ import redis
 from pymongo import MongoClient
 from pymongo.database import Database as MongoDatabase
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
 
 settings = get_settings()
+
+
+class Base(DeclarativeBase):
+    """Base class dùng chung cho toàn bộ SQLAlchemy models (MySQL).
+
+    Alembic (`alembic/env.py`) import `Base.metadata` từ đây để autogenerate migration.
+    """
+
 
 # ---- MySQL (SQLAlchemy) ----
 engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)

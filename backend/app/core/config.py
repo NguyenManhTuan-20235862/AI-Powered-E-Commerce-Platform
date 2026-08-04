@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     # AI Agent (LangChain)
     OPENAI_API_KEY: str | None = None
 
+    @property
+    def is_production(self) -> bool:
+        """True khi APP_ENV=production - dùng để ẩn Swagger/ReDoc docs."""
+        return self.APP_ENV.lower() == "production"
+
 
 @lru_cache
 def get_settings() -> Settings:
