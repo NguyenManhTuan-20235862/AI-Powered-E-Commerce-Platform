@@ -1,0 +1,10 @@
+export interface Product {
+  id: string | number;
+  name: string;
+  description?: string;
+  price: number;
+  stock: number;
+  category?: string;
+  imageUrl?: string;
+  createdAt?: string;
+}
