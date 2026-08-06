@@ -8,14 +8,16 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pymongo.errors import PyMongoError
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.core.config import get_settings
+from app.core.config import API_PREFIX, get_settings
 from app.core.database import mongo_client
 from app.core.logging import setup_logging
 from app.core.middleware import RequestContextMiddleware
+from app.core.storage import UPLOAD_ROOT, UPLOAD_URL_PREFIX
 from app.routers import (
     ai_chat,
     auth,
@@ -156,7 +158,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 
-API_PREFIX = "/api/v1"
+# Upload ảnh sản phẩm (task 3.4.1) - lưu local, serve qua StaticFiles. Tạo
+# thư mục trước khi mount (StaticFiles lỗi ngay lúc khởi động app nếu thư mục
+# chưa tồn tại) - xem app/core/storage.py cho lý do chọn giải pháp local này.
+UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount(UPLOAD_URL_PREFIX, StaticFiles(directory=UPLOAD_ROOT), name="uploads")
+
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(user.router, prefix=API_PREFIX)
 app.include_router(product.router, prefix=API_PREFIX)

@@ -64,6 +64,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# ==== Upload local (task 3.4.1 - ảnh sản phẩm, app/core/storage.py) ====
+# Dev bind-mount ./backend:/app (docker-compose.yml) khiến file upload thật
+# sự ghi ra đây trên host - không commit dữ liệu test/ảnh upload thật.
+backend/uploads/
+
 # ==== Claude Code (override cá nhân, không chia sẻ) ====
 .claude/settings.local.json
 
