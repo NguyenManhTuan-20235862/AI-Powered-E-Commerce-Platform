@@ -3,12 +3,12 @@ import Link from "next/link";
 /** TODO (Thành viên B): thêm menu, giỏ hàng, trạng thái đăng nhập (useAuth) khi có dữ liệu thật. */
 export function Header() {
   return (
-    <header className="border-b border-brand-100 bg-white">
+    <header className="border-b border-border bg-surface">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
-        <Link href="/" className="text-lg font-semibold text-brand-800">
-          E-Commerce Platform
+        <Link href="/" className="font-heading text-lg text-primary-700">
+          Vun
         </Link>
-        <nav className="flex gap-6 text-sm text-brand-600">
+        <nav className="flex gap-6 text-sm text-foreground-secondary">
           <Link href="/products">Sản phẩm</Link>
           <Link href="/cart">Giỏ hàng</Link>
           <Link href="/orders">Đơn hàng</Link>

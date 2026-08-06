@@ -2,19 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design token gốc (task 1.3.4, trang auth) - task 4.1.1 chuyển từ
+ * app/(auth)/auth.css sang đây để áp dụng cho TOÀN SITE (globals.css được
+ * root layout.tsx import, không chỉ route group (auth)). tailwind.config.ts
+ * trỏ thẳng vào các biến này (VD primary: "var(--color-accent)") - ĐÂY LÀ
+ * NGUỒN SỰ THẬT DUY NHẤT cho giá trị màu/font/radius/shadow, không định
+ * nghĩa trùng giá trị hex ở tailwind.config.ts. Xem docs/DESIGN_TOKENS.md để
+ * biết ý nghĩa/cách dùng từng token.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-bg: #f5ead8;
+  --color-surface: #ebddc5;
+  --color-text: #201e1d;
+  --color-accent: #c67139;
+  --color-accent-100: #fff2eb;
+  --color-accent-300: #ffc6a5;
+  --color-accent-600: #b2622d;
+  --color-accent-700: #8c491a;
+  --color-accent-800: #643312;
+  --color-accent-2: #7a8a5e;
+  --color-accent-2-100: #f0fae1;
+  --color-accent-2-300: #ccdbb2;
+  --color-accent-2-800: #3d472b;
+  --color-accent-2-900: #272e1b;
+  --color-neutral-500: #a19786;
+  --color-neutral-600: #82796a;
+  --color-neutral-700: #645c50;
+  --color-divider: color-mix(in srgb, #201e1d 16%, transparent);
+  --font-heading: var(--font-caprasimo), serif;
+  --font-body: var(--font-figtree), sans-serif;
+  --radius-md: 16px;
+  --radius-lg: 28px;
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2e2b25 22%, transparent);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--color-bg);
+  color: var(--color-text);
 }

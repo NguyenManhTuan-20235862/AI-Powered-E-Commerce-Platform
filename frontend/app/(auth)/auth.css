@@ -1,19 +1,10 @@
-:root {
-  --color-bg: #f5ead8;
-  --color-surface: #ebddc5;
-  --color-text: #201e1d;
-  --color-accent: #c67139;
-  --color-accent-100: #fff2eb; --color-accent-300: #ffc6a5; --color-accent-600: #b2622d; --color-accent-700: #8c491a; --color-accent-800: #643312;
-  --color-accent-2: #7a8a5e;
-  --color-accent-2-100: #f0fae1; --color-accent-2-300: #ccdbb2; --color-accent-2-800: #3d472b; --color-accent-2-900: #272e1b;
-  --color-neutral-500: #a19786; --color-neutral-600: #82796a; --color-neutral-700: #645c50;
-  --color-divider: color-mix(in srgb, #201e1d 16%, transparent);
-  --font-heading: var(--font-caprasimo), serif;
-  --font-body: var(--font-figtree), sans-serif;
-  --radius-md: 16px; --radius-lg: 28px;
-  --shadow-lg: 0 12px 32px color-mix(in srgb, #2e2b25 22%, transparent);
-}
-
+/*
+ * Token dùng trong file này (--color-*, --font-*, --radius-*, --shadow-lg)
+ * được khai báo ở app/globals.css (task 4.1.1, trước đó khai báo trùng ngay
+ * trong :root của file này - đã bỏ để tránh 2 nguồn giá trị) - globals.css
+ * luôn được load trước (root layout) nên các biến này có sẵn khi file này
+ * áp dụng, KHÔNG cần khai báo lại.
+ */
 .auth-page { min-height: 100vh; width: 100%; display: flex; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); }
 .auth-left { flex: 1 1 58%; width: 100%; display: flex; flex-direction: column; padding: 0 64px; box-sizing: border-box; order: 0; }
 .auth-center { width: 100%; max-width: 420px; margin: 0 auto; flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 56px 0; }

@@ -194,12 +194,21 @@ app/
 ```
 app/
 ├── (customer)/    # route group: Header/Footer, "/" "/products" "/cart"...
-├── (auth)/         # route group: layout căn giữa, "/login" "/register"
+├── (auth)/         # route group: layout 2 cột full-bleed riêng, "/login" "/register"
 └── admin/           # segment THẬT (không phải route group) → "/admin/*"
                        # (tránh trùng URL với (customer)/products)
 ```
 `lib/axios.ts` (interceptor gắn JWT), `lib/auth.ts` (đọc/ghi token localStorage),
 `hooks/useAuth.ts`, `types/` (User/Product/Order/Cart).
+
+**Design token** (task 4.1.1, xem `docs/DESIGN_TOKENS.md`) — màu/font/radius/
+shadow khai báo 1 lần dạng CSS custom property ở `app/globals.css` (`:root`),
+`tailwind.config.ts` map thành class ngữ nghĩa (`bg-primary`, `bg-surface`,
+`text-foreground`, `font-heading`...) TRỎ THẲNG vào cùng biến đó — không lặp
+lại giá trị hex. Component mới (catalog, admin...) dùng thẳng class Tailwind
+này; `app/(auth)/auth.css` (CSS thuần, không phải Tailwind utility, viết từ
+task 1.3.4) vẫn giữ nguyên cách viết cũ, chỉ đọc chung biến `--color-*`/
+`--font-*` từ `globals.css` thay vì tự khai báo `:root` riêng.
 
 **`NEXT_PUBLIC_API_URL` luôn phải là URL truy cập được từ trình duyệt** (VD:
 `http://localhost:8000/api/v1`) — **KHÔNG BAO GIỜ** dùng tên service Docker
