@@ -52,11 +52,27 @@ task 2.1.2):
 
 **Chưa có trong repo** (đừng giả định tồn tại): `Makefile`, CI config, linter/
 formatter cho backend (không có ruff/black), test nào cho frontend.
-`docker-compose.yml` (gốc repo, task 2.3.1 → 2.3.4) đã ĐỦ 5 service (`mysql`,
-`mongodb`, `redis`, `backend`, `frontend`) - `docker compose up` (không chỉ
-định service) giờ chạy được TOÀN BỘ stack bằng 1 lệnh, xem Commands. Vẫn CHƯA
-có: file compose riêng cho production (Dockerfile.prod của Backend/Frontend
-chưa được dùng ở đâu cả, đó là việc khác - task deploy sau này).
+`docker-compose.yml` (gốc repo, task 2.3.1 → 2.3.4 + 3.5.2) đã ĐỦ 6 service
+(`mysql`, `mongodb`, `redis`, `backend`, `frontend`, `product-sync-scheduler`)
+- `docker compose up` (không chỉ định service) giờ chạy được TOÀN BỘ stack
+bằng 1 lệnh, xem Commands. Vẫn CHƯA có: file compose riêng cho production
+(Dockerfile.prod của Backend/Frontend chưa được dùng ở đâu cả, đó là việc
+khác - task deploy sau này).
+
+**`product-sync-scheduler`** (task 3.5.2, `backend/scripts/run_scheduler.py`)
+- tiến trình APScheduler ĐỘC LẬP, KHÔNG chung process với `backend`
+(Gunicorn/API) - dùng lại NGUYÊN `Dockerfile.dev`/`Dockerfile.prod` của
+Backend (chỉ đổi `command:` để chạy `python -m scripts.run_scheduler` thay vì
+uvicorn/gunicorn), chạy `sync_products_to_mongo()` (task 3.5.1) theo lịch cron
+đọc từ `PRODUCT_SYNC_CRON` (mặc định `0 2 * * *`, giờ Việt Nam). Tách container
+riêng (không nhúng APScheduler vào `app/main.py`) để tránh N Gunicorn worker
+của `backend` production mỗi worker tự chạy 1 bản lịch riêng (sync trùng N
+lần mỗi khi tới giờ) - luôn ĐÚNG 1 tiến trình chạy scheduler bất kể `backend`
+có bao nhiêu worker. Lỗi trong lúc sync (MySQL/Mongo tạm thời không kết nối
+được...) chỉ log, KHÔNG crash scheduler - tự chờ lịch chạy kế tiếp. Trigger
+chạy tay (test/verify): `docker compose exec product-sync-scheduler python -m
+scripts.sync_products_to_mongo` - CỐ TÌNH không có endpoint HTTP cho việc
+này, xem lý do đầy đủ trong docstring `run_scheduler.py`.
 
 `nginx/nginx.conf` (task 2.4.1) đã có - routing `/` → `frontend:3000`, `/api/`
 → `backend:8000` (giữ nguyên path, KHÔNG strip `/api` - khớp `API_PREFIX =
@@ -71,8 +87,9 @@ bằng container tạm (xem Commands).
 ## Commands
 
 **Docker Compose - CÁCH CHẠY DEV KHUYẾN NGHỊ** (`docker-compose.yml` ở gốc
-repo, đủ 5 service từ task 2.3.4 - dùng `Dockerfile.dev` cho cả Backend lẫn
-Frontend, có hot-reload qua volume mount, KHÔNG phải bản tối ưu production):
+repo, đủ 6 service từ task 2.3.4/3.5.2 - dùng `Dockerfile.dev` cho cả Backend
+lẫn Frontend (và `product-sync-scheduler`, dùng lại Dockerfile.dev của
+Backend), có hot-reload qua volume mount, KHÔNG phải bản tối ưu production):
 ```bash
 cp .env.example .env                  # gốc repo - MYSQL_ROOT_PASSWORD/MYSQL_DATABASE +
                                         # MONGO_INITDB_ROOT_USERNAME/PASSWORD + REDIS_PASSWORD
@@ -81,10 +98,11 @@ cp backend/.env.example backend/.env  # JWT_SECRET_KEY + các biến khác Backe
                                         # trong file này bị docker-compose.yml OVERRIDE tự động
                                         # khi chạy qua compose (đổi host -> tên service), KHÔNG
                                         # cần tự sửa 3 biến đó cho khớp compose.
-docker compose up --build     # build + chạy CẢ 5 service - MySQL/MongoDB/Redis lên trước
-                                # (đợi healthy), Backend lên sau (đợi 3 DB healthy), Frontend
-                                # lên cuối (đợi Backend healthy) - đúng thứ tự tự động qua
-                                # `depends_on: condition: service_healthy`.
+docker compose up --build     # build + chạy CẢ 6 service - MySQL/MongoDB/Redis lên trước
+                                # (đợi healthy), Backend + product-sync-scheduler lên sau (đợi
+                                # DB healthy - scheduler chỉ cần mysql+mongodb, không đợi redis),
+                                # Frontend lên cuối (đợi Backend healthy) - đúng thứ tự tự động
+                                # qua `depends_on: condition: service_healthy`.
 docker compose ps             # xem trạng thái + healthcheck từng service
 docker compose logs -f backend    # xem log riêng 1 service (tương tự frontend/mysql/...)
 docker compose down           # dừng - GIỮ NGUYÊN data MySQL/MongoDB (named volume), Redis
@@ -126,7 +144,7 @@ npm run lint    # eslint
 # hostname không resolve được nếu chạy ngoài network (đã tự gặp: DNS lạ trên
 # máy Windows "bắt" luôn hostname không tồn tại, nginx -t tưởng nhầm là hợp
 # lệ) - gắn đúng network là cách kiểm tra ĐÁNG TIN CẬY duy nhất.
-docker compose up -d   # đảm bảo cả 5 service đang chạy trước
+docker compose up -d   # đảm bảo cả 6 service đang chạy trước
 MSYS_NO_PATHCONV=1 docker run --rm \
   --network ai-powered-e-commerce-platform_default \
   -v "$(pwd)/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \

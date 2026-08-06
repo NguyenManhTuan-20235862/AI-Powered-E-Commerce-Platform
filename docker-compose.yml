@@ -1,14 +1,16 @@
 # docker-compose.yml — task 2.3.1 (`mysql`) + 2.3.2 (`mongodb`) + 2.3.3
-# (`redis`) + 2.3.4 (`backend` + `frontend`) - ĐỦ CẢ 5 SERVICE, `docker
-# compose up` giờ chạy được toàn bộ hệ thống dev bằng 1 lệnh.
+# (`redis`) + 2.3.4 (`backend` + `frontend`) + 3.5.2 (`product-sync-scheduler`)
+# - ĐỦ CẢ 6 SERVICE, `docker compose up` giờ chạy được toàn bộ hệ thống dev
+# bằng 1 lệnh.
 #
 # Không khai báo `version:` - key này đã deprecated từ Compose V2 (Docker
 # Compose hiện tại tự nhận diện schema, khai báo thêm chỉ sinh warning thừa).
 #
-# Không khai báo `networks:` riêng dù giờ đã có 5 service (không phải 2 như
+# Không khai báo `networks:` riêng dù giờ đã có 6 service (không phải 2 như
 # lúc quyết định ban đầu) - lý do vẫn giữ nguyên, chỉ mở rộng thêm: `backend`
 # CÓ gọi `mysql`/`mongodb`/`redis`, `frontend` (server-side, nếu sau này thêm
-# SSR gọi API) CÓ THỂ gọi `backend` - nhưng đây vẫn là 1 nhóm service DUY NHẤT
+# SSR gọi API) CÓ THỂ gọi `backend`, `product-sync-scheduler` (task 3.5.2)
+# CÓ gọi `mysql`/`mongodb` - nhưng đây vẫn là 1 nhóm service DUY NHẤT
 # cùng thuộc 1 hệ thống, không có nhu cầu CÔ LẬP 1 nhóm khỏi nhóm khác (VD
 # tách riêng network "data" khỏi "app" để `frontend` không gọi thẳng tới
 # `mysql` được) - project solo, network mặc định của Compose đã đủ: mọi
@@ -229,6 +231,39 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  product-sync-scheduler:
+    # Dùng LẠI Dockerfile.dev của Backend (task 3.5.2) - CHỈ đổi CMD (khối
+    # `command:` bên dưới) để chạy scheduler thay vì uvicorn - cùng code/
+    # dependency (apscheduler đã có sẵn trong requirements-core.txt), không
+    # cần Dockerfile riêng. Service RIÊNG BIỆT (không chạy chung process với
+    # `backend`) - lý do đầy đủ xem docstring backend/scripts/run_scheduler.py:
+    # tránh N Gunicorn worker của `backend` (production) mỗi worker tự chạy
+    # 1 bản lịch riêng, gây sync trùng lặp N lần mỗi khi tới giờ.
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: ecommerce-product-sync-scheduler
+    restart: unless-stopped
+    env_file:
+      - backend/.env
+    environment:
+      # Giống hệt override ở service `backend` bên trên - Settings
+      # (pydantic-settings) yêu cầu đủ DATABASE_URL/MONGO_URI/REDIS_URL để
+      # khởi tạo được (dù scheduler không TRỰC TIẾP dùng Redis, import
+      # app.core.database vẫn tạo redis_client - thiếu REDIS_URL sẽ lỗi
+      # validate Settings ngay lúc import, chưa kịp chạy job nào).
+      DATABASE_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/?authSource=admin
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: ["python", "-m", "scripts.run_scheduler"]
 
   frontend:
     build:
