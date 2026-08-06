@@ -78,7 +78,25 @@ def get_mongo_db() -> MongoDatabase:
 
 
 # ---- Redis ----
-redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+# redis-py (sync) - cùng quyết định/lý do với pymongo (sync) ở task 3.2.3 (xem
+# comment MongoDB phía trên): toàn bộ router hiện tại là `def` (sync), dùng
+# client async (VD aioredis/redis.asyncio) sẽ buộc mọi router có dùng cache
+# (task 3.3.1 trở đi) phải đổi sang `async def`, lệch convention hiện tại.
+# WebSocket /ws/chat (task 5.1, async bắt buộc) khi cần đọc/ghi Redis (VD rate
+# limit AI chat, task 8.3) qua client sync này PHẢI bọc `asyncio.to_thread(...)`
+# giống lưu ý đã ghi cho MongoDB - KHÔNG gọi trực tiếp trong hàm async.
+#
+# socket_connect_timeout/socket_timeout=3 (giây) - redis-py mặc định KHÔNG có
+# timeout nào cả (None = chờ vô hạn nếu Redis không phản hồi) - còn tệ hơn
+# default 30s của PyMongo (serverSelectionTimeoutMS ở mongo_client phía trên).
+# 3s cùng ngưỡng đã chọn cho MongoDB, đủ ngắn để request không treo vô hạn khi
+# Redis down, đủ dài để không báo lỗi nhầm do độ trễ mạng thoáng qua.
+redis_client = redis.from_url(
+    settings.REDIS_URL,
+    decode_responses=True,
+    socket_connect_timeout=3,
+    socket_timeout=3,
+)
 
 
 def get_redis() -> redis.Redis:
