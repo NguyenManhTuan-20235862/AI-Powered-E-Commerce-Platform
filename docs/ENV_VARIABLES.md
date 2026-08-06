@@ -42,6 +42,7 @@ sửa lỗi liên quan). CHỈ file `.env*.example` được phép commit.
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `app/core/security.py` (`create_access_token`) | Thời hạn access token (phút) - có thể giữ nguyên hoặc rút ngắn cho production tùy chính sách bảo mật. |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `app/core/security.py` (`create_refresh_token`) | Thời hạn refresh token (ngày) - tương tự trên. |
 | `OPENAI_API_KEY` | `app/core/config.py` (khai báo, CHƯA có code nào dùng - task 6.x) | API key OpenAI cho AI Agent - **PHẢI có giá trị thật trước khi task 6.x chạy được**, hiện để trống. |
+| `PRODUCT_SYNC_CRON` | `backend/scripts/run_scheduler.py` (task 3.5.2) | Lịch chạy job đồng bộ Product → MongoDB, cú pháp cron chuẩn, giờ Việt Nam (`Asia/Ho_Chi_Minh`) - default `0 2 * * *` (2h sáng hàng ngày). Đổi giá trị này (VD `*/2 * * * *`) để test lịch chạy gần mà không cần sửa code - service compose `product-sync-scheduler`, KHÔNG phải `backend`, đọc biến này. |
 | `PORT` | `gunicorn_conf.py` (CHỈ `Dockerfile.prod`, KHÔNG dùng ở dev) | Port Gunicorn bind - default `8000`, đổi nếu hosting yêu cầu port khác. |
 | `GUNICORN_WORKERS` | `gunicorn_conf.py` (CHỈ production) | Số worker process - default tự tính theo CPU (giới hạn trần 4), **NÊN set thẳng theo CPU thật của server production** thay vì để tự động (xem comment trong `gunicorn_conf.py`). |
 | `GUNICORN_TIMEOUT` | `gunicorn_conf.py` (CHỈ production) | Giây chờ trước khi Gunicorn coi worker bị treo và restart - default `30`. |

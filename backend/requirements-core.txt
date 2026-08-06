@@ -26,6 +26,13 @@ pymongo==4.10.1
 # Redis
 redis==5.2.1
 
+# Scheduler (task 3.5.2) - backend/scripts/run_scheduler.py, chạy trong
+# service compose RIÊNG `product-sync-scheduler` (không phải tiến trình
+# FastAPI/Gunicorn) - vẫn để ở requirements-core.txt (không phải file riêng)
+# vì service đó DÙNG LẠI NGUYÊN Dockerfile.dev/Dockerfile.prod của Backend
+# (chỉ đổi CMD), cùng 1 image/bước cài dependency với app FastAPI.
+apscheduler==3.10.4
+
 # Auth
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4

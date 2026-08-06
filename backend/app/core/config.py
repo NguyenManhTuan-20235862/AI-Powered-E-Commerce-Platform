@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     # AI Agent (LangChain)
     OPENAI_API_KEY: str | None = None
 
+    # Scheduler (task 3.5.2) - lịch chạy job đồng bộ Product -> MongoDB
+    # (backend/scripts/run_scheduler.py), cú pháp cron chuẩn (phút giờ ngày
+    # tháng thứ), giờ Việt Nam (Asia/Ho_Chi_Minh). Mặc định 2h sáng hàng
+    # ngày - giờ ít traffic nhất. Đọc qua biến môi trường để TEST được lịch
+    # chạy gần (VD "*/2 * * * *" - mỗi 2 phút) mà KHÔNG cần sửa code.
+    PRODUCT_SYNC_CRON: str = "0 2 * * *"
+
     @property
     def is_production(self) -> bool:
         """True khi APP_ENV=production - dùng để ẩn Swagger/ReDoc docs."""
