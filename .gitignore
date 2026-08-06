@@ -35,12 +35,27 @@ next-env.d.ts
 # ==== Environment / secrets ====
 .env
 .env.*
-!.env.example
+# !.env.example (cũ) CHỈ un-ignore đúng 1 tên file literal ".env.example" -
+# KHÔNG khớp ".env.production.example" (task 2.4.2 thêm file này) vì đó là
+# chuỗi khác hoàn toàn với git, không phải "cùng loại nhưng thiếu 1 ký tự" -
+# đã tự kiểm chứng bằng `git check-ignore -v .env.production.example` trước
+# khi sửa: bị `.env.*` chặn, KHÔNG được `!.env.example` cứu vì không khớp
+# chính xác. Đổi sang wildcard `!.env*.example` - khớp MỌI file dạng
+# ".env<bất kỳ>.example" (.env.example, .env.production.example,
+# .env.staging.example...) - luôn an toàn commit được các file .example dù
+# thêm bao nhiêu môi trường mới sau này, không phải sửa .gitignore mỗi lần.
+!.env*.example
 *.pem
 *.key
 
 # ==== Docker ====
 docker-compose.override.yml
+
+# ==== DB backup/dump (task 2.3.1 - mysqldump khi migrate mysql-dev -> compose) ====
+# Chứa dữ liệu thật (password_hash, email...) - không bao giờ commit. Chỉ loại
+# trừ thư mục riêng cho backup (không chặn *.sql toàn repo - tránh lỡ chặn
+# nhầm seed script .sql hợp lệ nào đó commit sau này).
+db_backups/
 
 # ==== Logs ====
 *.log

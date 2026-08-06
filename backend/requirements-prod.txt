@@ -1,0 +1,7 @@
+# Dependency CHỈ dùng khi chạy production (task 2.1.2) - process manager thật
+# thay cho `uvicorn --reload` của dev. Tách riêng khỏi requirements-core.txt để
+# Dockerfile.dev không phải cài gunicorn (dev không cần, dùng uvicorn trực tiếp).
+#
+# Cài kèm requirements-core.txt (không dùng độc lập):
+#   pip install -r requirements-core.txt -r requirements-prod.txt
+gunicorn==23.0.0

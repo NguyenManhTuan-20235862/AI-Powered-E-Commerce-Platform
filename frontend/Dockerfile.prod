@@ -1,0 +1,89 @@
+# Dockerfile.prod — môi trường PRODUCTION cho Frontend (task 2.2.2).
+# Multi-stage build dùng `output: 'standalone'` (next.config.ts) - chạy
+# `node server.js` đã build sẵn, KHÔNG chạy `next dev`/`npm run start`.
+
+# node:20-slim - giữ nguyên lý do đã chọn ở Dockerfile.dev (task 2.2.1): không
+# có package cần native binding hiện tại, ưu tiên nhất quán glibc với Backend
+# + tránh rủi ro sharp/libvips trên alpine nếu sau này dùng next/image.
+FROM node:20-slim AS base
+WORKDIR /app
+
+
+# ---- Stage 1: deps ---------------------------------------------------------
+# Cài TOÀN BỘ node_modules (kể cả devDependencies) - KHÁC với Backend
+# (requirements-prod.txt chỉ cài gunicorn, prod không cần pytest). Lý do khác
+# biệt: TypeScript, TailwindCSS, PostCSS, ESLint đều nằm trong devDependencies
+# nhưng là công cụ BUILD-TIME bắt buộc cho `next build` (biên dịch TS, xử lý
+# CSS) - không phải runtime-only như pytest với Backend. Stage này chỉ tồn tại
+# để build, không được copy sang stage cuối -> không tốn dung lượng image thật.
+FROM base AS deps
+COPY package.json package-lock.json ./
+RUN npm ci
+
+
+# ---- Stage 2: builder -------------------------------------------------------
+FROM base AS builder
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# NEXT_PUBLIC_API_URL PHẢI có mặt tại BUILD TIME, không phải chỉ runtime: biến
+# NEXT_PUBLIC_* được Next.js thay thế (inline) trực tiếp vào bundle JS ngay lúc
+# `next build` chạy - sau khi build xong, giá trị này đã "đông cứng" trong các
+# file .js tĩnh, đọc `process.env.NEXT_PUBLIC_API_URL` lúc container start
+# (như `docker run -e ...`) KHÔNG có tác dụng gì với code đã build. Truyền qua
+# --build-arg lúc `docker build` (xem lệnh build bên dưới) - đổi giá trị bắt
+# buộc phải build lại image, không thể chỉ đổi env var lúc docker run.
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
+ENV NODE_ENV=production
+RUN npm run build
+
+
+# ---- Stage 3: runner (image chạy thật) -------------------------------------
+FROM base AS runner
+ENV NODE_ENV=production
+
+# Non-root user - cùng nguyên tắc Backend Dockerfile.prod (task 2.1.2): không
+# chạy app bằng root trong container production.
+RUN groupadd --system --gid 1001 nodejs && \
+    useradd --system --uid 1001 --gid nodejs --no-create-home --shell /usr/sbin/nologin nextjs
+
+# public/ - static asset phục vụ trực tiếp (favicon, ảnh...), KHÔNG đi qua
+# dependency-trace của `output: standalone` nên phải copy tay riêng.
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+
+# .next/standalone - server.js + CHỈ các node_modules thật sự được import
+# (Next.js tự trace qua Node.js module graph), KHÔNG phải node_modules đầy đủ
+# của stage deps. .next/static - JS/CSS/font đã build, tách riêng khỏi
+# standalone vì Next.js không tự copy phần này vào (phục vụ qua CDN/edge được
+# ở kiến trúc lớn hơn, ở đây phục vụ trực tiếp từ server.js).
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# .next/cache: chown sẵn (dù hiện tại chưa có code nào cần ghi lúc runtime -
+# đã kiểm tra, KHÔNG dùng next/image, KHÔNG dùng ISR/generateStaticParams
+# revalidate) - phòng khi thêm next/image hoặc ISR sau này (đã có TODO trong
+# components/auth/AuthLayout.tsx nhắc next/image cho ảnh hero), tránh lặp lại
+# đúng lỗi PermissionError non-root user gặp ở Backend task 2.1.2 (log dir
+# không ghi được vì chỉ path --chown mới thuộc về appuser, /app gốc vẫn của
+# root). Chi phí gần như 0 (1 lệnh mkdir), lợi ích: không phải debug lại lỗi
+# đã biết.
+RUN mkdir -p .next/cache && chown nextjs:nodejs .next/cache
+
+USER nextjs
+
+EXPOSE 3000
+ENV PORT=3000
+# HOSTNAME=0.0.0.0 - đã kiểm tra: server.js sinh ra bởi `output: standalone`
+# (Next.js 15.5.22) đọc `process.env.HOSTNAME || '0.0.0.0'`, tức bản thân đã
+# mặc định 0.0.0.0 (khác giả định ban đầu rằng nó giống uvicorn mặc định bind
+# 127.0.0.1). Set tường minh ở đây không đổi hành vi thật, nhưng giữ lại vì:
+# không phụ thuộc vào default ngầm của 1 file do tool sinh ra (có thể đổi giữa
+# các version Next.js) - khai báo rõ ràng trong Dockerfile để chắc chắn.
+ENV HOSTNAME=0.0.0.0
+
+# Chạy thẳng server.js (Node, không qua npm) - server.js là entrypoint tối
+# giản do `output: standalone` tự sinh, không cần cài `next` CLI hay
+# package.json script nào trong image cuối.
+CMD ["node", "server.js"]

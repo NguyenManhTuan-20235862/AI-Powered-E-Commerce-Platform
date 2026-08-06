@@ -1,0 +1,12 @@
+# Dependency CHỈ dùng khi chạy test (pytest) - tách khỏi requirements-core.txt
+# để image production (Dockerfile.prod) không phải cõng theo test framework:
+# không cần thiết lúc runtime, chỉ tốn dung lượng + tăng bề mặt tấn công vô ích
+# cho 1 service chạy thật.
+#
+# Dockerfile.dev CÓ cài file này (dev cần chạy `pytest`, kể cả trong container
+# qua `docker exec <container> pytest`). Dockerfile.prod KHÔNG cài.
+#
+# Cài kèm requirements-core.txt (không dùng độc lập):
+#   pip install -r requirements-core.txt -r requirements-test.txt
+pytest==8.3.4
+httpx==0.28.1

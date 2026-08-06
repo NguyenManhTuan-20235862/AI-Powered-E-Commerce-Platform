@@ -1,0 +1,54 @@
+# Dockerfile.dev — môi trường DEV cho Backend (task 2.1.1).
+# CHỈ dùng để chạy local với hot-reload. Chưa tối ưu size/security cho
+# production (multi-stage, non-root user...) - việc đó thuộc task 2.1.2.
+
+# python:3.12-slim (Debian, glibc) thay vì python:3.12-alpine: các package C-
+# extension nặng trong requirements-core.txt (bcrypt, cryptography qua
+# python-jose, pymongo, pydantic-core) đều có sẵn wheel dựng cho manylinux
+# (glibc) trên PyPI, cài thẳng bằng pip không cần biên dịch. Alpine dùng musl
+# libc, thường không khớp các wheel này -> phải cài thêm build-essential/
+# musl-dev và tự compile từ source, image dev build lâu hơn và dễ lỗi hơn để
+# đổi lấy vài chục MB dung lượng - không đáng cho môi trường dev, ưu tiên tốc
+# độ + độ ổn định.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# PYTHONDONTWRITEBYTECODE: không ghi file .pyc (không cần thiết trong container,
+# volume mount code từ host sẽ không muốn lẫn .pyc do container tạo ra).
+# PYTHONUNBUFFERED: log in ra stdout ngay lập tức, không bị buffer - cần thiết
+# để `docker logs`/`docker compose logs` thấy log real-time thay vì bị delay.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Copy requirements TRƯỚC rồi mới install - tận dụng Docker layer cache: nếu
+# chỉ sửa code (không đổi dependency), layer install ở dưới được cache lại,
+# không phải tải + cài lại toàn bộ dependency mỗi lần build.
+#
+# Cài requirements-core.txt + requirements-test.txt (dev cần chạy `pytest`, kể
+# cả qua `docker exec <container> pytest`) - CHƯA cài requirements-ai.txt
+# (langchain, langchain-openai) cho tới khi thực sự bắt đầu code AI Agent
+# (task 6.x, xem docs/KNOWN_TODOS.md). Bỏ qua vì hiện KHÔNG có code nào trong
+# app/ import các package này (đã grep xác nhận) - cài sẵn chỉ tốn dung lượng
+# image + thời gian build vô ích.
+COPY requirements-core.txt requirements-test.txt ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements-core.txt -r requirements-test.txt
+
+# TODO (task 6.1 - AI Integration): thêm layer riêng cài requirements-ai.txt
+# tại đây khi bắt đầu code AI Agent - giữ TÁCH layer với requirements-core.txt
+# ở trên để rebuild AI deps không làm invalidate cache của layer core (2 layer
+# cache độc lập, đổi 1 bên không phải cài lại bên kia). Bỏ comment 2 dòng dưới:
+# COPY requirements-ai.txt .
+# RUN pip install --no-cache-dir -r requirements-ai.txt
+
+# Copy code SAU cùng - đổi code không làm invalidate cache của các layer install ở trên.
+COPY . .
+
+EXPOSE 8000
+
+# --reload: uvicorn tự restart khi code thay đổi (qua volume mount ở docker run/
+# docker-compose, xem lệnh test bên dưới) - watchfiles đã có sẵn qua uvicorn[standard].
+# --host 0.0.0.0: BẮT BUỘC để truy cập được từ ngoài container (mặc định uvicorn
+# chỉ bind 127.0.0.1 trong container, không expose ra ngoài được).
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

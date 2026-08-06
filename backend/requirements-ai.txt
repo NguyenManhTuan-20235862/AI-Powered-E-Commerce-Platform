@@ -1,0 +1,18 @@
+# Dependency cho AI Agent (task 6.x - AI Integration). Tách riêng khỏi
+# requirements-core.txt vì (xác nhận bằng grep toàn bộ app/ và tests/):
+# CHƯA có dòng code nào import langchain/langchain_openai/openai/tiktoken -
+# cài sẵn trong image dev/production chỉ tốn dung lượng + thời gian build vô
+# ích cho tới khi thực sự bắt đầu code AI Agent.
+#
+# openai và tiktoken KHÔNG pin riêng ở đây - là dependency bắc cầu của
+# langchain-openai, tự cài kèm theo đúng version langchain-openai yêu cầu.
+#
+# Cài kèm requirements-core.txt (không dùng độc lập, AI Agent vẫn cần app
+# FastAPI/DB chạy được):
+#   pip install -r requirements-core.txt -r requirements-ai.txt
+#
+# TODO (task 6.1): khi bắt đầu code AI Agent, nhớ thêm layer cài file này vào
+# backend/Dockerfile.dev (đã có sẵn khối comment đánh dấu chỗ cần bỏ comment).
+# Xem docs/KNOWN_TODOS.md mục liên quan.
+langchain==0.3.13
+langchain-openai==0.2.14
