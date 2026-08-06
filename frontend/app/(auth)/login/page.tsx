@@ -1,11 +1,17 @@
-"use client";
+import { Suspense } from "react";
+import { AuthLayout } from "@/components/auth/AuthLayout";
+import { LoginForm } from "@/components/auth/LoginForm";
 
-// TODO (Thành viên B): form đăng nhập, gọi POST /auth/login qua lib/axios, lưu JWT bằng useAuth().login().
 export default function LoginPage() {
   return (
-    <div>
-      <h1 className="text-xl font-semibold text-brand-800">Đăng nhập</h1>
-      <p className="mt-2 text-sm text-brand-500">Form đăng nhập - sẽ triển khai sau.</p>
-    </div>
+    <AuthLayout mode="login" heading="Chào mừng trở lại" subheading="Đăng nhập để tiếp tục mua sắm tại Vun.">
+      {/* LoginForm dùng useSearchParams() (đọc ?registered=1 từ RegisterForm) -
+          bắt buộc bọc Suspense, nếu không `next build` lỗi lúc static render
+          trang này (Next.js App Router yêu cầu Suspense boundary cho mọi
+          component gọi useSearchParams). */}
+      <Suspense fallback={null}>
+        <LoginForm />
+      </Suspense>
+    </AuthLayout>
   );
 }

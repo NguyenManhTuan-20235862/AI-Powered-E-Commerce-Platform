@@ -9,8 +9,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from app.core.openapi_responses import auth_responses
-from app.core.security import get_current_user
-from app.schemas.common import APIResponse, MessageResponse, PaginatedData
+from app.core.security import require_role
+from app.models.user import User, UserRole
+from app.schemas.common import APIResponse, MessageResponse, PaginatedResponse
 from app.schemas.product import ProductCreate, ProductImageRead, ProductRead, ProductUpdate
 
 router = APIRouter(prefix="/products", tags=["Product"])
@@ -18,10 +19,10 @@ router = APIRouter(prefix="/products", tags=["Product"])
 
 @router.get(
     "",
-    response_model=APIResponse[PaginatedData[ProductRead]],
+    response_model=APIResponse[PaginatedResponse[ProductRead]],
     summary="Danh sách sản phẩm",
 )
-def list_products() -> APIResponse[PaginatedData[ProductRead]]:
+def list_products() -> APIResponse[PaginatedResponse[ProductRead]]:
     """Danh sách sản phẩm (phân trang, filter theo category/giá, search theo tên). Public."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai - task 3.4")
 
@@ -57,7 +58,7 @@ def get_related_products(product_id: str) -> APIResponse[list[ProductRead]]:
 )
 def create_product(
     payload: ProductCreate,
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.admin))],
 ) -> APIResponse[ProductRead]:
     """Tạo sản phẩm mới. Yêu cầu: Admin."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai - task 3.4")
@@ -72,7 +73,7 @@ def create_product(
 def update_product(
     product_id: str,
     payload: ProductUpdate,
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.admin))],
 ) -> APIResponse[ProductRead]:
     """Cập nhật sản phẩm. Yêu cầu: Admin."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai - task 3.4")
@@ -86,7 +87,7 @@ def update_product(
 )
 def delete_product(
     product_id: str,
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.admin))],
 ) -> MessageResponse:
     """Xóa (hoặc ẩn) sản phẩm. Yêu cầu: Admin."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai - task 3.4")
@@ -100,7 +101,7 @@ def delete_product(
 )
 def upload_product_image(
     product_id: str,
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.admin))],
     file: UploadFile = File(...),
 ) -> APIResponse[ProductImageRead]:
     """Upload ảnh sản phẩm. Yêu cầu: Admin."""

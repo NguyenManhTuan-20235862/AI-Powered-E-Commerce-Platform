@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { decodeToken, getToken, isTokenExpired, removeToken, setToken } from "@/lib/auth";
+import { clearTokens, decodeToken, getToken, isTokenExpired, removeToken, setToken } from "@/lib/auth";
 import type { User } from "@/types/user";
 
 /**
@@ -30,7 +30,7 @@ export function useAuth() {
   }, []);
 
   const logout = useCallback(() => {
-    removeToken();
+    clearTokens();
     setUser(null);
   }, []);
 

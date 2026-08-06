@@ -8,7 +8,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.openapi_responses import auth_responses
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_role
+from app.models.user import User, UserRole
 from app.schemas.common import APIResponse, MessageResponse
 from app.schemas.payment import PaymentCreateRequest, PaymentCreateResponse, PaymentStatusRead
 
@@ -20,11 +21,11 @@ router = APIRouter(prefix="/payments", tags=["Payment"])
     response_model=APIResponse[PaymentCreateResponse],
     summary="Tạo giao dịch thanh toán (VNPay/Momo sandbox)",
     status_code=status.HTTP_201_CREATED,
-    responses=auth_responses(),
+    responses=auth_responses(forbidden=True),
 )
 def create_payment(
     payload: PaymentCreateRequest,
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.customer))],
 ) -> APIResponse[PaymentCreateResponse]:
     """Tạo giao dịch thanh toán (VNPay/Momo sandbox), trả về URL redirect. Yêu cầu: Customer."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai - task 8.1")
@@ -53,7 +54,7 @@ def payment_callback() -> MessageResponse:
 )
 def get_payment_status(
     order_id: str,
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> APIResponse[PaymentStatusRead]:
     """Kiểm tra trạng thái thanh toán của 1 đơn hàng. Yêu cầu: Customer, Admin."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai - task 8.1")

@@ -8,7 +8,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.openapi_responses import auth_responses
-from app.core.security import get_current_user
+from app.core.security import require_role
+from app.models.user import User, UserRole
 from app.schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
 from app.schemas.common import APIResponse, MessageResponse
 
@@ -34,7 +35,7 @@ def list_categories() -> APIResponse[list[CategoryRead]]:
 )
 def create_category(
     payload: CategoryCreate,
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.admin))],
 ) -> APIResponse[CategoryRead]:
     """Tạo danh mục mới. Yêu cầu: Admin."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")
@@ -49,7 +50,7 @@ def create_category(
 def update_category(
     category_id: str,
     payload: CategoryUpdate,
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.admin))],
 ) -> APIResponse[CategoryRead]:
     """Cập nhật danh mục. Yêu cầu: Admin."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")
@@ -63,7 +64,7 @@ def update_category(
 )
 def delete_category(
     category_id: str,
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.admin))],
 ) -> MessageResponse:
     """Xóa danh mục. Yêu cầu: Admin."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")
