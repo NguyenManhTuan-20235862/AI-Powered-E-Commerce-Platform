@@ -15,22 +15,34 @@ chat AI) qua WebSocket/SSE.
 
 ## Tech Stack
 
-Liệt kê đúng theo `backend/requirements.txt` và `frontend/package.json` — không có
-gì ngoài danh sách này đang thực sự được dùng trong code.
+Liệt kê đúng theo `backend/requirements-core.txt` + `backend/requirements-ai.txt`
++ `backend/requirements-test.txt` + `backend/requirements-prod.txt` và
+`frontend/package.json` — không có gì ngoài danh sách này đang thực sự được
+dùng trong code.
 
-**Backend** (`backend/requirements.txt`):
+**Backend** (`backend/requirements-core.txt` — cài mặc định, kể cả trong
+`Dockerfile.dev` VÀ `Dockerfile.prod`):
 - FastAPI 0.115 + Uvicorn (ASGI server)
 - Pydantic 2.10 + pydantic-settings (đọc config từ `.env`)
 - SQLAlchemy 2.0 + Alembic (ORM + migration cho MySQL) + PyMySQL (driver)
 - PyMongo 4.10 (MongoDB - chat log, review)
 - redis-py 5.2 (cache, session, rate limit)
-- python-jose + passlib[bcrypt] (JWT, hash password) — **đã khai báo dependency
-  nhưng logic JWT thật CHƯA implement**, xem phần Notes.
+- python-jose + passlib[bcrypt] (JWT, hash password - đã implement thật từ task 1.3.3)
 - python-multipart (form-data / upload file)
 - email-validator (bắt buộc để dùng `EmailStr` trong Pydantic)
-- LangChain + langchain-openai — **đã khai báo dependency nhưng CHƯA có code
-  tích hợp AI Agent nào trong `app/`**
-- pytest + httpx (test)
+
+**Backend** (`backend/requirements-ai.txt` — CHƯA cài mặc định, xem Notes):
+- LangChain + langchain-openai — tách riêng khỏi requirements-core.txt vì CHƯA
+  có code tích hợp AI Agent nào trong `app/`; cài kèm khi bắt đầu task 6.x.
+
+**Backend** (`backend/requirements-test.txt` — cài trong `Dockerfile.dev`,
+KHÔNG cài trong `Dockerfile.prod`, task 2.1.2):
+- pytest + httpx (test) — production không cần test framework lúc chạy thật.
+
+**Backend** (`backend/requirements-prod.txt` — CHỈ cài trong `Dockerfile.prod`,
+task 2.1.2):
+- Gunicorn (process manager, chạy Uvicorn worker) — dev dùng `uvicorn --reload`
+  trực tiếp, không cần Gunicorn.
 
 **Frontend** (`frontend/package.json`):
 - Next.js 15 (App Router) + React 19
@@ -38,23 +50,65 @@ gì ngoài danh sách này đang thực sự được dùng trong code.
 - TailwindCSS 3.4 + PostCSS + Autoprefixer
 - TypeScript 5, ESLint 9 + eslint-config-next
 
-**Chưa có trong repo** (đừng giả định tồn tại): `docker-compose.yml`, `Makefile`,
-Dockerfile, CI config, linter/formatter cho backend (không có ruff/black), test
-nào cho frontend.
+**Chưa có trong repo** (đừng giả định tồn tại): `Makefile`, CI config, linter/
+formatter cho backend (không có ruff/black), test nào cho frontend.
+`docker-compose.yml` (gốc repo, task 2.3.1 → 2.3.4) đã ĐỦ 5 service (`mysql`,
+`mongodb`, `redis`, `backend`, `frontend`) - `docker compose up` (không chỉ
+định service) giờ chạy được TOÀN BỘ stack bằng 1 lệnh, xem Commands. Vẫn CHƯA
+có: file compose riêng cho production (Dockerfile.prod của Backend/Frontend
+chưa được dùng ở đâu cả, đó là việc khác - task deploy sau này).
+
+`nginx/nginx.conf` (task 2.4.1) đã có - routing `/` → `frontend:3000`, `/api/`
+→ `backend:8000` (giữ nguyên path, KHÔNG strip `/api` - khớp `API_PREFIX =
+"/api/v1"` đã gắn cứng trong `app/main.py`, áp dụng cho MỌI router kể cả
+`/ws/chat` và `/notifications/*/stream` - path thật là `/api/v1/ws/chat`,
+KHÔNG PHẢI `/ws/chat` trơ dù cách đọc lướt `docs/API_SPEC.md` dễ hiểu nhầm).
+**CHƯA đưa nginx vào `docker-compose.yml`** (quyết định có chủ đích, xem
+`docs/KNOWN_TODOS.md` nếu có ghi chú thêm) - dev vẫn truy cập trực tiếp
+`:3000`/`:8000` như từ task 2.3.4, `nginx/nginx.conf` hiện chỉ test độc lập
+bằng container tạm (xem Commands).
 
 ## Commands
 
-**Backend** (`cd backend`, cần Python 3.12 + venv):
+**Docker Compose - CÁCH CHẠY DEV KHUYẾN NGHỊ** (`docker-compose.yml` ở gốc
+repo, đủ 5 service từ task 2.3.4 - dùng `Dockerfile.dev` cho cả Backend lẫn
+Frontend, có hot-reload qua volume mount, KHÔNG phải bản tối ưu production):
+```bash
+cp .env.example .env                  # gốc repo - MYSQL_ROOT_PASSWORD/MYSQL_DATABASE +
+                                        # MONGO_INITDB_ROOT_USERNAME/PASSWORD + REDIS_PASSWORD
+cp backend/.env.example backend/.env  # JWT_SECRET_KEY + các biến khác Backend cần lúc chạy
+                                        # standalone - 3 biến DATABASE_URL/MONGO_URI/REDIS_URL
+                                        # trong file này bị docker-compose.yml OVERRIDE tự động
+                                        # khi chạy qua compose (đổi host -> tên service), KHÔNG
+                                        # cần tự sửa 3 biến đó cho khớp compose.
+docker compose up --build     # build + chạy CẢ 5 service - MySQL/MongoDB/Redis lên trước
+                                # (đợi healthy), Backend lên sau (đợi 3 DB healthy), Frontend
+                                # lên cuối (đợi Backend healthy) - đúng thứ tự tự động qua
+                                # `depends_on: condition: service_healthy`.
+docker compose ps             # xem trạng thái + healthcheck từng service
+docker compose logs -f backend    # xem log riêng 1 service (tương tự frontend/mysql/...)
+docker compose down           # dừng - GIỮ NGUYÊN data MySQL/MongoDB (named volume), Redis
+                                # LUÔN mất (tmpfs, chủ đích - xem docker-compose.yml)
+docker compose down -v        # dừng + XÓA LUÔN volume MySQL/MongoDB - mất toàn bộ data
+```
+Truy cập: Frontend `http://localhost:3000`, Backend/Swagger `http://localhost:8000/docs`,
+MySQL/MongoDB/Redis vẫn publish port ra host (3306/27017/6379) để debug bằng
+Workbench/Compass/RedisInsight nếu cần, dù Backend/Frontend không dùng các port
+này (gọi nhau qua tên service trong network nội bộ compose).
+
+**Backend standalone** (`cd backend`, cần Python 3.12 + venv - dùng khi muốn
+chạy Backend NGOÀI Docker, VD cần chạy `pytest` nhanh không qua container,
+hoặc debug bằng debugger gắn trực tiếp vào process):
 ```bash
 python -m venv .venv && source .venv/Scripts/activate   # Windows Git Bash
-pip install -r requirements.txt
+pip install -r requirements-core.txt -r requirements-test.txt   # + requirements-ai.txt khi làm task 6.x
 cp .env.example .env          # rồi điền giá trị thật, KHÔNG commit .env
 uvicorn app.main:app --reload  # dev server: http://localhost:8000
 pytest -q                       # chạy test
 ```
 Swagger UI: `http://localhost:8000/docs` (tự ẩn khi `APP_ENV=production`).
 
-**Frontend** (`cd frontend`):
+**Frontend standalone** (`cd frontend` - dùng khi muốn chạy Frontend NGOÀI Docker):
 ```bash
 npm install
 npm run dev     # dev server: http://localhost:3000
@@ -63,9 +117,35 @@ npm run start   # chạy bản build
 npm run lint    # eslint
 ```
 
-**Docker**: chưa có `docker-compose.yml` trong repo — README có nhắc "sẽ bổ sung
-sau", nên hiện tại KHÔNG có lệnh `docker compose up` nào chạy được. Khi file này
-được thêm, cập nhật lại mục này.
+**Test `nginx/nginx.conf`** (task 2.4.1 - CHƯA có service `nginx` trong
+`docker-compose.yml`, test độc lập bằng container tạm):
+```bash
+# Kiểm tra cú pháp - PHẢI gắn --network vào network của compose (tên network =
+# <tên-thư-mục-project>_default, xem `docker network ls`) để hostname
+# backend/frontend resolve được thật - nginx -t VẪN CÓ THỂ báo "syntax ok" dù
+# hostname không resolve được nếu chạy ngoài network (đã tự gặp: DNS lạ trên
+# máy Windows "bắt" luôn hostname không tồn tại, nginx -t tưởng nhầm là hợp
+# lệ) - gắn đúng network là cách kiểm tra ĐÁNG TIN CẬY duy nhất.
+docker compose up -d   # đảm bảo cả 5 service đang chạy trước
+MSYS_NO_PATHCONV=1 docker run --rm \
+  --network ai-powered-e-commerce-platform_default \
+  -v "$(pwd)/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+  nginx:1.27-alpine nginx -t
+
+# Test thật (map port 8080 host -> 80 nginx, tránh đụng port 3000/8000 đang
+# publish trực tiếp):
+MSYS_NO_PATHCONV=1 docker run -d --name nginx-test \
+  --network ai-powered-e-commerce-platform_default \
+  -p 8080:80 \
+  -v "$(pwd)/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+  nginx:1.27-alpine
+curl -i -X OPTIONS http://localhost:8080/api/v1/auth/login   # -> qua nginx tới backend
+                                                                # (chú ý: /health KHÔNG có prefix
+                                                                # /api/v1, xem app/main.py - dùng route
+                                                                # có thật dưới /api/v1/ để test, VD trên)
+curl http://localhost:8080/                                   # -> qua nginx tới frontend
+docker rm -f nginx-test                    # dọn sau khi test xong
+```
 
 ## Architecture
 
@@ -77,7 +157,7 @@ app/
 ├── core/
 │   ├── config.py          # Settings (pydantic-settings, đọc .env)
 │   ├── database.py        # engine MySQL, MongoClient, Redis client
-│   ├── security.py        # get_current_user (JWT — hiện là dependency GIẢ, xem Notes)
+│   ├── security.py        # get_current_user (decode JWT thật, require_role — xem Notes)
 │   └── openapi_responses.py  # helper responses={401,403,404,429} dùng chung
 ├── routers/           # 1 file/module: auth, user, product, category, cart,
 │                        order, payment, review, ai_chat, notification, dashboard
@@ -96,6 +176,17 @@ app/
 ```
 `lib/axios.ts` (interceptor gắn JWT), `lib/auth.ts` (đọc/ghi token localStorage),
 `hooks/useAuth.ts`, `types/` (User/Product/Order/Cart).
+
+**`NEXT_PUBLIC_API_URL` luôn phải là URL truy cập được từ trình duyệt** (VD:
+`http://localhost:8000/api/v1`) — **KHÔNG BAO GIỜ** dùng tên service Docker
+(`http://backend:8000`) hay `host.docker.internal`, kể cả sau khi có
+`docker-compose.yml` ở task 2.3. Lý do: biến `NEXT_PUBLIC_*` được Next.js nhúng
+thẳng vào bundle JS chạy ở **trình duyệt người dùng** (client-side), không phải
+chạy trong container - trình duyệt trên máy host không resolve được tên service
+Docker lẫn `host.docker.internal` (hostname đó chỉ có nghĩa bên trong network
+namespace của Docker). Khác với các biến phía Backend (server-side, chỉ chạy
+trong container) - những biến đó mới dùng được tên service/`host.docker.internal`.
+Xem thêm task 2.2.1.
 
 **Luồng dữ liệu chính**:
 - **MySQL** (qua SQLAlchemy): dữ liệu quan hệ — User, Product, Category, Cart, Order.
@@ -122,12 +213,21 @@ app/
 - **Đọc `docs/API_SPEC.md` trước khi thêm route mới** — đây là nguồn sự thật cho
   path/method/tag/quyền truy cập (Public/Auth/Role). Nếu code lệch spec, đồng bộ
   lại 1 trong 2 phía, đừng để lệch âm thầm.
-- **Không commit `.env` thật** — `.gitignore` đã chặn `.env`/`.env.*` (trừ
-  `.env.example`). Luôn cập nhật `.env.example` khi thêm biến môi trường mới.
-- **`get_current_user` hiện là dependency GIẢ** (`backend/app/core/security.py`) —
-  chỉ kiểm tra có Bearer token hay không (401 nếu thiếu), luôn trả về
-  `role="customer"`, KHÔNG decode JWT thật. Đừng dựa vào role trả về từ đây cho
-  logic thật; sẽ được thay bằng JWT decode thật ở task xác thực.
+- **Không commit `.env` thật** — `.gitignore` (gốc repo VÀ `frontend/.gitignore`,
+  cả 2 đã sửa ở task 2.4.2 - trước đó `frontend/.env.example` bị chặn nhầm,
+  chưa từng commit được) chặn `.env`/`.env.*`, CHỈ cho phép `.env*.example`.
+- **Khi thêm biến môi trường mới** (VD task 8.1 — VNPay/Momo API key): cập
+  nhật CẢ 2 nơi — (1) file `.env.example` tương ứng (root/`backend/`/`frontend/`)
+  và `.env.production.example` cùng cấp nếu biến đó cần giá trị khác ở
+  production, (2) bảng trong `docs/ENV_VARIABLES.md` (task 2.4.2 - tra cứu
+  tổng hợp toàn bộ biến, khỏi phải lục 3 file rải rác). Bỏ qua 1 trong 2 sẽ
+  lặp lại đúng kiểu lệch đã gặp ở `docs/KNOWN_TODOS.md` #6/#7/#8.
+- **`get_current_user` decode JWT THẬT** (`backend/app/core/security.py`, task
+  1.3.3) — verify chữ ký + hạn token bằng `JWT_SECRET_KEY`/`JWT_ALGORITHM`,
+  load đúng `User` từ MySQL theo `sub` trong payload, 401 nếu thiếu/sai/hết
+  hạn token hoặc `is_active=False`. `require_role(*roles)` (dependency factory
+  dùng SAU `get_current_user`) check role thật của user, 403 nếu không đủ
+  quyền. Có thể dựa vào role/`is_active` trả về từ đây cho logic thật.
 - **Rate limit AI chat dùng Redis** — `/ai/chat` và `/ws/chat` cần giới hạn tần suất
   theo user (xem `docs/API_SPEC.md` mục 8), hiện CHƯA implement, chỉ mới khai báo
   response `429` trong docs.
@@ -136,3 +236,10 @@ app/
 - Route `/orders/admin` (path cố định) được đăng ký TRƯỚC `/orders/{order_id}`
   trong `app/routers/order.py` — nếu thêm route mới có path cố định xen giữa các
   route templated, giữ đúng thứ tự này để tránh bị route templated nuốt mất.
+- **`frontend/Dockerfile.prod` cần `NEXT_PUBLIC_API_URL` qua `--build-arg` lúc
+  `docker build`, KHÔNG PHẢI lúc `docker run`** (task 2.2.2) — đã tự kiểm chứng:
+  đổi biến này lúc `docker run -e ...` không có tác dụng gì, giá trị lúc build
+  đã bị nhúng cứng vào file JS tĩnh trong `.next/static/`. Hệ quả cho task 7.5.2
+  (Deploy Frontend): đổi API URL giữa các môi trường (staging/production) bắt
+  buộc phải build lại image tương ứng, không thể dùng chung 1 image cho nhiều
+  môi trường như Backend (chỉ cần đổi `--env-file`/biến môi trường lúc chạy).
