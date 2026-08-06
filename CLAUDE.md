@@ -158,12 +158,18 @@ app/
 │   ├── config.py          # Settings (pydantic-settings, đọc .env)
 │   ├── database.py        # engine MySQL, MongoClient, Redis client
 │   ├── security.py        # get_current_user (decode JWT thật, require_role — xem Notes)
+│   ├── cache.py            # get_or_set_cache()/invalidate_by_prefix() (Redis, task 3.3.1/3.4.1)
+│   ├── storage.py          # lưu ảnh upload local (task 3.4.1 — xem Notes)
 │   └── openapi_responses.py  # helper responses={401,403,404,429} dùng chung
 ├── routers/           # 1 file/module: auth, user, product, category, cart,
 │                        order, payment, review, ai_chat, notification, dashboard
-├── models/             # SQLAlchemy models (MySQL) — hiện là placeholder, chưa có cột
+├── models/             # SQLAlchemy models (MySQL) — đủ cột thật (User task 1.3.1,
+│                        Category/Product task 3.1.2, CartItem/Order/OrderItem/
+│                        Payment task 3.1.3), migrate qua Alembic (task 3.1.4)
 ├── schemas/            # Pydantic schemas, gồm common.py (envelope response chuẩn)
-└── services/            # business logic tách khỏi router — hiện là placeholder
+└── services/            # business logic tách khỏi router — auth/product/cart/order
+                           đã có logic thật (task 1.3.2, 3.4.1, 3.4.2); category/
+                           dashboard/payment vẫn placeholder (chưa tới task tương ứng)
 ```
 
 **Frontend** (`frontend/app/`) — App Router, chia theo route group:
@@ -251,3 +257,15 @@ Xem thêm task 2.2.1.
   (Deploy Frontend): đổi API URL giữa các môi trường (staging/production) bắt
   buộc phải build lại image tương ứng, không thể dùng chung 1 image cho nhiều
   môi trường như Backend (chỉ cần đổi `--env-file`/biến môi trường lúc chạy).
+- **Upload ảnh sản phẩm (task 3.4.1) lưu LOCAL** (`app/core/storage.py`, thư mục
+  `uploads/`, serve qua `StaticFiles` mount ở `/api/v1/uploads`) — dev có bind
+  mount nên persist thật trên host, nhưng `Dockerfile.prod` KHÔNG có bind mount
+  nên file MẤT khi container recreate — PHẢI chuyển cloud storage (S3/Cloudinary)
+  trước khi deploy thật, xem `docs/KNOWN_TODOS.md` #16.
+- **`POST /orders` dùng `SELECT ... FOR UPDATE` thật** (task 3.4.2/8.2 —
+  `app/services/order_service.py:checkout()`) — khóa từng sản phẩm trong giỏ
+  theo thứ tự `product_id` TĂNG DẦN (tránh deadlock giữa 2 giao dịch checkout
+  đồng thời trùng sản phẩm) + khóa `cart_items` của chính user trước (chặn
+  double-submit). `PUT /orders/{id}/status` (Admin) chỉ chấp nhận transition
+  hợp lệ theo `VALID_STATUS_TRANSITIONS` (state machine cơ bản, cùng file) —
+  400 nếu sai quy tắc, không âm thầm chấp nhận mọi giá trị.

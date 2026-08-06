@@ -105,7 +105,9 @@ def test_admin_token_on_customer_only_endpoint_returns_403(client: TestClient, d
 
 
 def test_customer_token_on_customer_only_endpoint_passes_role_check(client: TestClient, db: Session) -> None:
+    """GET /cart (task 3.4.2, implement thật) không còn là placeholder 501 -
+    trả 200 thật (giỏ hàng rỗng, user vừa tạo chưa thêm gì)."""
     user = _create_user(db, role=UserRole.customer)
     token = create_access_token(user_id=user.id, role=user.role.value)
     response = client.get("/api/v1/cart", headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 501
+    assert response.status_code == 200
