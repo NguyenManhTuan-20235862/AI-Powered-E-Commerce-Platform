@@ -4,6 +4,14 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Hằng số (KHÔNG đọc từ .env - không phải giá trị cấu hình theo môi trường,
+# đổi giá trị này là breaking change API) - đặt ở đây (không phải trong
+# app/main.py, nơi dùng chính) vì app/core/storage.py (task 3.4.1, URL public
+# phục vụ ảnh upload) CŨNG cần đúng giá trị này để khớp `location /api/` bên
+# nginx.conf sau này - main.py IMPORT lại từ đây thay vì tự định nghĩa,
+# tránh 2 nơi hardcode "/api/v1" độc lập dễ lệch nhau nếu 1 trong 2 đổi.
+API_PREFIX = "/api/v1"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

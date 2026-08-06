@@ -42,5 +42,8 @@ def test_protected_endpoint_requires_auth(client: TestClient) -> None:
 
 
 def test_public_endpoint_does_not_require_auth(client: TestClient) -> None:
+    """GET /products (task 3.4.1, implement thật) không còn là placeholder
+    501 - trả 200 thật (danh sách rỗng, chưa seed sản phẩm nào) là bằng
+    chứng RÕ RÀNG hơn hẳn "vượt qua auth rồi rơi vào 501" trước đây."""
     response = client.get("/api/v1/products")
-    assert response.status_code == 501
+    assert response.status_code == 200
