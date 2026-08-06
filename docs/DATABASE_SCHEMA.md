@@ -3,10 +3,10 @@
 **Task WBS:** 1.3.1 (bảng `users`) + 3.1.1 (ERD đầy đủ, dbdiagram.io) + 3.1.2
 (model Category/Product) + 3.1.3 (model CartItem/Order/OrderItem/Payment) +
 3.1.4 (Alembic migration) + 3.2.1 (collection MongoDB `chat_logs`) + 3.2.2
-(collection MongoDB `reviews`)
+(collection MongoDB `reviews`) + 3.5.1 (collection MongoDB `product_catalog_sync`)
 **Phạm vi:** Đủ 7 bảng MySQL — `users`, `categories`, `products`, `cart_items`,
-`orders`, `order_items`, `payments` — VÀ 2 collection MongoDB — `chat_logs`,
-`reviews`
+`orders`, `order_items`, `payments` — VÀ 3 collection MongoDB — `chat_logs`,
+`reviews`, `product_catalog_sync`
 **Công nghệ:** MySQL 8, SQLAlchemy 2.0 (ORM), Alembic (migration) cho phần
 quan hệ; MongoDB (PyMongo) cho phần phi cấu trúc
 **Model code thật:** `app/models/user.py`, `category.py`, `product.py`, `cart.py`,
@@ -385,13 +385,60 @@ kết nối PyMongo):
   `user_id` trong 1 document `reviews` còn trỏ tới bản ghi tồn tại thật; nếu
   sau này thêm đường xóa cứng ở MySQL, phải tự xử lý đồng bộ ở tầng service.
 
+### Collection `product_catalog_sync` (task 3.5.1)
+
+KHÁC BẢN CHẤT với `chat_logs`/`reviews` ở trên — 2 collection đó là dữ liệu
+GỐC (ghi trực tiếp), còn `product_catalog_sync` là **bản sao dẫn xuất**
+(derived), đồng bộ 1 CHIỀU định kỳ từ MySQL (`products`) qua
+`backend/scripts/sync_products_to_mongo.py` — nguồn sự thật vẫn luôn là
+MySQL, collection này có thể xóa sạch và tái tạo lại hoàn toàn bất kỳ lúc
+nào mà không mất dữ liệu. Mục đích: phục vụ AI Agent (task 6.x) truy vấn
+nhanh lúc tư vấn/RAG mà không cần query trực tiếp MySQL mỗi lần.
+
+**"Sản phẩm hot" — định nghĩa TẠM THỜI**: đồng bộ TOÀN BỘ sản phẩm
+`is_active=True` (KHÔNG lọc/xếp hạng theo "bán chạy" thật — chưa có dữ liệu
+tổng hợp từ `order_items` đủ dùng, task 5.3/6.x chưa tồn tại). Khi có dữ
+liệu đơn hàng đủ lớn, cân nhắc thêm field điểm phổ biến vào mỗi document
+thay vì thu hẹp phạm vi đồng bộ — xem đầy đủ ở docstring file script.
+
+| Field | Kiểu dữ liệu | Bắt buộc? | Mô tả |
+|---|---|---|---|
+| `_id` | `Int64` — **chính là** `products.id` (MySQL), KHÔNG phải `ObjectId` | Bắt buộc | Dùng thẳng PK MySQL làm khóa Mongo — upsert đơn giản, đối chiếu ngược tức thời, không cần field phụ |
+| `name` | `String` | NOT NULL | Snapshot `products.name` lúc đồng bộ |
+| `slug` | `String` | NOT NULL | Snapshot `products.slug` |
+| `description` | `String` | NULLABLE | Snapshot `products.description` |
+| `price` | `Decimal128` (KHÔNG phải `Double`/float) | NOT NULL | Snapshot `products.price` — dùng `Decimal128` để giữ chính xác tuyệt đối cho tiền tệ, BSON không tự encode được `decimal.Decimal` của Python |
+| `category_name` | `String` | NOT NULL | Tên category — DENORMALIZE (snapshot lúc đồng bộ), cùng đánh đổi đã chọn ở `reviews.user_name` (task 3.2.2), nhưng độ lệch nhỏ hơn hẳn vì job này chạy định kỳ (task 3.5.2), tự làm mới thường xuyên |
+| `stock_quantity` | `Int32` | NOT NULL | Snapshot `products.stock_quantity` |
+| `image_url` | `String` | NULLABLE | Snapshot `products.image_url` |
+| `synced_at` | `Date` (UTC) | NOT NULL | Thời điểm lần đồng bộ GẦN NHẤT ghi document này — cập nhật ở MỌI lần chạy script, kể cả khi nội dung không đổi |
+
+### Xử lý sản phẩm bị ẩn (`is_active=False`)
+
+XÓA CỨNG document khỏi `product_catalog_sync` (KHÔNG soft-delete kiểu
+`reviews.is_deleted`) — quyết định có chủ đích: collection này không có nhu
+cầu audit trail (khác lý do soft-delete ở `reviews`), và xóa cứng đảm bảo
+AI Agent RAG (task 6.x) KHÔNG THỂ gợi ý nhầm sản phẩm đã ẩn dù code truy vấn
+có lỡ quên filter `is_active` hay không (document không tồn tại thì không
+truy vấn ra được) — mạnh hơn cơ chế "nhớ phải filter đúng". Sản phẩm active
+lại sau này tự động được đồng bộ lại ở lần chạy kế tiếp.
+
+### Index
+
+CHƯA đề xuất index cụ thể nào ở task 3.5.1 — khác `chat_logs`/`reviews` (đã
+biết trước endpoint thật sẽ query thế nào), collection này chưa có code đọc
+thật (AI Agent, task 6.x chưa tồn tại) nên chưa có cơ sở để đề xuất index
+đúng nhu cầu — quyết định khi task 6.x biết rõ pattern truy vấn RAG thật.
+`_id` đã có index mặc định (mọi collection Mongo), đủ cho upsert/lookup theo
+ID hiện tại.
+
 ---
 
 ## Ghi chú
 
 - File này giờ cover đủ 7 bảng MySQL theo ERD đã chốt ở task 3.1.1 (trước đó —
-  task 1.3.1 — chỉ có bảng `users`) — VÀ 2 collection MongoDB `chat_logs`
-  (task 3.2.1), `reviews` (task 3.2.2).
+  task 1.3.1 — chỉ có bảng `users`) — VÀ 3 collection MongoDB `chat_logs`
+  (task 3.2.1), `reviews` (task 3.2.2), `product_catalog_sync` (task 3.5.1).
 - Model code thật (`app/models/`) đã tạo ở task 3.1.2 (Category, Product) và
   3.1.3 (CartItem, Order, OrderItem, Payment), đã chạy Alembic migration
   thật ở task 3.1.4 (`alembic/versions/fdf5ca1856fe_...py`, test round-trip
@@ -415,3 +462,11 @@ kết nối PyMongo):
   chưa" (task 6.x) — cả 3 endpoint liên quan (`GET /products/{id}/reviews`,
   `POST /products/{id}/reviews`, `DELETE /reviews/{review_id}`,
   `app/routers/review.py`) vẫn đang `501`.
+- Collection `product_catalog_sync` (task 3.5.1) — KHÁC 2 collection trên,
+  đã có code ghi THẬT (`backend/scripts/sync_products_to_mongo.py`) — đồng
+  bộ 1 chiều MySQL → Mongo, verify thật: chạy lần đầu (số document khớp số
+  Product `is_active=True`), đổi giá 1 sản phẩm rồi chạy lại (Mongo cập nhật
+  đúng, không tạo trùng), set `is_active=False` 1 sản phẩm rồi chạy lại
+  (document tương ứng bị xóa khỏi Mongo). CHƯA lên lịch tự động chạy (task
+  3.5.2, APScheduler) — hiện phải chạy tay
+  (`docker compose exec backend python -m scripts.sync_products_to_mongo`).
