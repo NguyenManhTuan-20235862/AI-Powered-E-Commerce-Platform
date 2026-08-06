@@ -1,0 +1,279 @@
+# docker-compose.yml — task 2.3.1 (`mysql`) + 2.3.2 (`mongodb`) + 2.3.3
+# (`redis`) + 2.3.4 (`backend` + `frontend`) - ĐỦ CẢ 5 SERVICE, `docker
+# compose up` giờ chạy được toàn bộ hệ thống dev bằng 1 lệnh.
+#
+# Không khai báo `version:` - key này đã deprecated từ Compose V2 (Docker
+# Compose hiện tại tự nhận diện schema, khai báo thêm chỉ sinh warning thừa).
+#
+# Không khai báo `networks:` riêng dù giờ đã có 5 service (không phải 2 như
+# lúc quyết định ban đầu) - lý do vẫn giữ nguyên, chỉ mở rộng thêm: `backend`
+# CÓ gọi `mysql`/`mongodb`/`redis`, `frontend` (server-side, nếu sau này thêm
+# SSR gọi API) CÓ THỂ gọi `backend` - nhưng đây vẫn là 1 nhóm service DUY NHẤT
+# cùng thuộc 1 hệ thống, không có nhu cầu CÔ LẬP 1 nhóm khỏi nhóm khác (VD
+# tách riêng network "data" khỏi "app" để `frontend` không gọi thẳng tới
+# `mysql` được) - project solo, network mặc định của Compose đã đủ: mọi
+# service thấy nhau qua DNS tên service, không cần khai báo gì thêm. Sẽ cân
+# nhắc lại nếu sau này có nhu cầu bảo mật/cô lập rõ ràng hơn.
+
+services:
+  mysql:
+    # mysql:8 - khớp đúng image đang dùng ở container mysql-dev hiện tại (đã
+    # kiểm tra `docker inspect mysql-dev` -> Image: mysql:8, thực tế resolve
+    # ra 8.4.11 tại thời điểm này - tag "8" là floating tag theo minor version
+    # mới nhất trong dòng major 8, không phải version cố định).
+    image: mysql:8
+    container_name: ecommerce-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    ports:
+      # Map ra host để vẫn dùng được MySQL Workbench/DBeaver kết nối trực tiếp
+      # khi cần debug - KHÔNG phải yêu cầu bắt buộc cho Backend (khi Backend
+      # vào compose ở task 2.3.4, Backend gọi qua network nội bộ của compose
+      # bằng tên service `mysql`, không qua cổng host này).
+      - "3306:3306"
+    volumes:
+      # Named volume - persist data qua các lần `docker compose down`/`up`
+      # (down KHÔNG xóa named volume, chỉ `down -v` mới xóa - lưu ý này quan
+      # trọng để không mất data do gõ nhầm lệnh).
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      # mysqladmin ping - kiểm tra MySQL THẬT SỰ nhận connection được, không
+      # chỉ process đã start (MySQL cần thời gian init data directory lần đầu,
+      # container "Up" không đồng nghĩa sẵn sàng nhận query). Dùng CMD-SHELL +
+      # "$$MYSQL_ROOT_PASSWORD" (2 dấu $ để Compose không tự thay thế biến này
+      # lúc parse YAML - giữ nguyên literal $MYSQL_ROOT_PASSWORD, để SHELL BÊN
+      # TRONG CONTAINER tự đọc từ biến môi trường thật của chính nó, đã set ở
+      # khối `environment` phía trên) - cần thiết vì root yêu cầu password khi
+      # MYSQL_ROOT_PASSWORD đã được set.
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  mongodb:
+    # mongo:7 - giữ nguyên đề xuất ban đầu, không đổi sang mongo:8: bản 7 là
+    # bản ổn định, đã qua nhiều điểm vá, PyMongo 4.10 (requirements-core.txt)
+    # tương thích tốt cả 2 bản - không có lý do đủ mạnh để đổi sang 8 (mới
+    # hơn nhưng chưa có ưu điểm nào thật sự cần cho project này) chỉ để đổi
+    # version, ưu tiên ổn định + tránh rủi ro chưa biết của bản mới hơn.
+    image: mongo:7
+    container_name: ecommerce-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      # Map ra host để debug bằng MongoDB Compass/mongosh trực tiếp - tương tự
+      # lý do map 3306 ở service mysql, không bắt buộc cho Backend (khi vào
+      # compose ở task 2.3.4, Backend gọi qua network nội bộ bằng tên service
+      # `mongodb`, không qua cổng host này).
+      - "27017:27017"
+    volumes:
+      # Named volume riêng - persist data qua các lần down/up (down KHÔNG xóa
+      # named volume, chỉ `down -v` mới xóa - giống lưu ý ở service mysql).
+      - mongo_data:/data/db
+    healthcheck:
+      # mongo:7 KHÔNG còn bundle shell "mongo" cũ (đã kiểm tra: image chỉ có
+      # `mongosh`, version 2.9.2) - PHẢI dùng mongosh, cú pháp `mongo --eval`
+      # (bản hướng dẫn cũ, phổ biến trên mạng) sẽ lỗi "command not found"
+      # trên image này.
+      #
+      # `db.adminCommand('ping')` KHÔNG cần username/password dù đã bật auth
+      # (MONGO_INITDB_ROOT_USERNAME/PASSWORD ở trên) - lệnh ping nằm trong
+      # nhóm command MongoDB cho phép chạy trước khi xác thực (chỉ để kiểm
+      # tra server còn sống, không đọc/ghi dữ liệu) - đã tự kiểm chứng lúc
+      # verify task này, không cần truyền -u/-p vào healthcheck.
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    # redis:7-alpine - KHÁC bản chất với lựa chọn slim-vs-alpine đã cân nhắc ở
+    # Backend (Python)/Frontend (Node): 2 service đó phải tự chạy `pip
+    # install`/`npm ci` lúc build - rủi ro thật là các package C-extension bên
+    # thứ 3 (bcrypt, sharp...) có thể thiếu bản dựng sẵn cho musl. Ở đây
+    # KHÔNG có bước cài đặt dependency nào cả - `redis-server` là binary có
+    # sẵn ngay trong image do chính Docker Official Images build và test cho
+    # alpine, không tải thêm gì lúc runtime. Không có rủi ro tương ứng, chọn
+    # alpine thoải mái vì nhẹ hơn hẳn (~58MB so với ~140MB bản debian-based).
+    image: redis:7-alpine
+    container_name: ecommerce-redis
+    restart: unless-stopped
+    # --requirepass: bật password - xem giải thích trong .env.example (gốc
+    # repo) vì sao chọn bật thay vì để mở, dù data ở đây chỉ là cache/session
+    # tạm thời.
+    #
+    # --save "": TẮT HẲN RDB snapshot (Redis mặc định tự lưu snapshot xuống
+    # /data theo chu kỳ, VD "save 3600 1") - dữ liệu ở đây (cache sản phẩm,
+    # JWT blacklist khi task 3.3.2 code thật, rate-limit counter task 8.3)
+    # đều tạm thời/có TTL, mất khi container restart KHÔNG sao (cache tự nạp
+    # lại, blacklist entry cũ dù mất thì access token liên quan cũng đã tự
+    # hết hạn theo thời gian) - tắt snapshot vừa khớp đúng bản chất "ephemeral"
+    # đã xác nhận, vừa tránh I/O ghi disk vô ích cho dữ liệu sẽ không cần khôi
+    # phục lại.
+    #
+    # Redis (khác MySQL/MongoDB) KHÔNG có cơ chế "set password qua biến môi
+    # trường" tích hợp sẵn trong image chính thức (MYSQL_ROOT_PASSWORD/
+    # MONGO_INITDB_ROOT_PASSWORD là tính năng riêng do entrypoint script của
+    # 2 image đó tự đọc - image Redis không có entrypoint tương đương) - phải
+    # truyền password qua cờ CLI `--requirepass` trong `command:`, Compose tự
+    # thay thế ${REDIS_PASSWORD} bằng giá trị thật đọc từ .env TRƯỚC khi container
+    # start (khác cơ chế `environment:` ở 2 service kia).
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--save", ""]
+    ports:
+      # Map ra host để debug bằng RedisInsight/redis-cli trực tiếp - cùng lý
+      # do đã áp dụng cho mysql/mongodb.
+      - "6379:6379"
+    # KHÔNG khai báo named volume: đã tắt RDB snapshot ở trên (--save ""),
+    # không có gì cần persist. Image gốc của Redis có khai báo sẵn
+    # `VOLUME ["/data"]` (Dockerfile riêng của Redis) - nếu không xử lý gì
+    # thêm, Docker vẫn tự tạo 1 ANONYMOUS volume cho /data dù ta không dùng
+    # tới (tồn tại âm thầm, không đặt tên, dễ quên dọn). Dùng `tmpfs` (RAM,
+    # không phải volume) để /data thật sự không chiếm disk và tự dọn sạch mỗi
+    # khi container dừng - khớp đúng tinh thần "ephemeral" đã chọn.
+    tmpfs:
+      - /data
+    healthcheck:
+      # redis-cli -a "$$REDIS_PASSWORD" ping - PHẢI truyền password (đã bật
+      # requirepass ở trên, thiếu -a sẽ bị lỗi "NOAUTH Authentication
+      # required" thay vì trả PONG). "$$" giữ nguyên lý do đã dùng ở
+      # healthcheck mysql: 2 dấu $ để Compose KHÔNG tự thay thế lúc parse
+      # YAML, để SHELL BÊN TRONG CONTAINER tự đọc biến môi trường thật -
+      # nhưng khác mysql/mongodb, Redis KHÔNG có sẵn biến môi trường
+      # REDIS_PASSWORD bên trong container (không đi qua `environment:`, chỉ
+      # truyền 1 lần qua CLI arg `command:` ở trên) - phải khai báo thêm ở
+      # `environment:` bên dưới CHỈ để healthcheck đọc lại được, KHÔNG dùng
+      # để cấu hình redis-server (đã cấu hình qua --requirepass rồi).
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: ecommerce-backend
+    restart: unless-stopped
+    # env_file: TÁI SỬ DỤNG backend/.env - file DUY NHẤT cũng dùng khi chạy
+    # standalone (`uvicorn --reload` trực tiếp trên máy, không qua Docker,
+    # xem mục Commands trong CLAUDE.md) - KHÔNG tạo thêm 1 file .env riêng
+    # cho compose (sẽ phải đồng bộ tay 2 file JWT_SECRET_KEY/APP_NAME/... mỗi
+    # lần đổi, dễ lệch). Chỉ 3 biến kết nối DB thật sự cần khác giá trị khi
+    # chạy trong compose (đổi host.docker.internal/localhost -> tên service)
+    # - override đúng 3 biến đó ở `environment:` bên dưới, phần còn lại
+    # (JWT_SECRET_KEY, APP_NAME, MONGO_DB_NAME...) vẫn lấy nguyên từ
+    # backend/.env vì compose `environment:` LUÔN được ưu tiên hơn `env_file:`
+    # cho cùng 1 tên biến (hành vi mặc định của Compose, không cần cấu hình gì
+    # thêm) - đây là cách gọn nhất, không phải maintain 2 bộ giá trị trùng lặp.
+    env_file:
+      - backend/.env
+    environment:
+      # Dùng LẠI đúng biến trong .env gốc repo (MYSQL_ROOT_PASSWORD,
+      # MONGO_INITDB_ROOT_PASSWORD, REDIS_PASSWORD - đang dùng để cấu hình
+      # chính 3 service mysql/mongodb/redis ở trên) thay vì khai riêng 1 bộ
+      # password khác trong backend/.env - đổi password ở 1 chỗ DUY NHẤT
+      # (.env gốc) là đủ, tránh 2 nguồn sự thật (Backend override CÙNG lúc
+      # LUÔN khớp DB thật, không thể lệch nhau do gõ nhầm ở 2 nơi).
+      DATABASE_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/?authSource=admin
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      # condition: service_healthy (không phải service_started mặc định) -
+      # Backend chỉ thật sự khởi động SAU KHI cả 3 healthcheck đều pass, tránh
+      # đúng lỗi Backend connect DB lúc DB "đã start container" nhưng CHƯA sẵn
+      # sàng nhận connection thật (MySQL cần thời gian init lần đầu - đã gặp
+      # đúng vấn đề tương tự ở task 2.3.1 lúc verify healthcheck riêng lẻ).
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Mount code để hot-reload (uvicorn --reload đã cấu hình sẵn trong
+      # Dockerfile.dev) - KHÔNG cần thêm named volume riêng cho dependency
+      # như node_modules ở Frontend: đã tự kiểm chứng
+      # (`python3 -c "import fastapi; print(fastapi.__file__)"` bên trong
+      # image) - `pip install` cài package vào
+      # /usr/local/lib/python3.12/site-packages/, NẰM NGOÀI /app hoàn toàn
+      # (Dockerfile.dev KHÔNG dùng venv, khác Dockerfile.prod). Bind mount
+      # ./backend:/app do đó KHÔNG che mất bất kỳ package nào đã cài lúc
+      # build - vấn đề "node_modules bị đè" ở Frontend KHÔNG xảy ra ở đây.
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # /health đã có sẵn (app/main.py) - dùng `python3 -c ...` thay vì
+      # `curl`/`wget`: image python:3.12-slim (Dockerfile.dev) KHÔNG cài sẵn
+      # curl/wget (đã kiểm tra: cả 2 đều "not found") - cài thêm chỉ để
+      # healthcheck là dư thừa, trong khi python3 vốn đã có sẵn (chính là
+      # binary của image) - dùng module chuẩn `urllib.request`, không cần
+      # thêm dependency nào.
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+      # KHÔNG dùng `args:` (build-arg) ở đây - đó là kỹ thuật riêng cho
+      # Dockerfile.PROD (task 2.2.2, `next build` chạy NGAY LÚC docker build,
+      # trước khi có container nào tồn tại, nên chỉ build-arg mới "kịp" có
+      # mặt). Dockerfile.dev thì NGƯỢC LẠI: `next build` không hề chạy lúc
+      # build image - image chỉ cài node_modules + copy code, việc compile
+      # thật (đọc process.env.NEXT_PUBLIC_*) xảy ra SAU, lúc `next dev` khởi
+      # động BÊN TRONG CONTAINER ĐANG CHẠY (CMD của Dockerfile.dev) - tại thời
+      # điểm đó biến `environment:` bên dưới ĐÃ có mặt trong container rồi
+      # (container luôn nhận đủ `environment:` trước khi CMD chạy) - nên
+      # `environment:` runtime bình thường của Compose là ĐỦ, không cần
+      # build-arg.
+    container_name: ecommerce-frontend
+    restart: unless-stopped
+    environment:
+      # LUÔN LÀ URL trình duyệt gọi được (http://localhost:8000/...), KHÔNG
+      # PHẢI http://backend:8000 - đã xác nhận ở task 2.2.1/2.2.2:
+      # NEXT_PUBLIC_* chạy trong TRÌNH DUYỆT của người dùng (client-side),
+      # trình duyệt trên máy host không resolve được tên service Docker
+      # `backend` (chỉ có nghĩa bên trong network nội bộ của Compose) - nhắc
+      # lại nguyên văn ghi chú đã có trong CLAUDE.md, không đổi dù giờ đã ở
+      # trong compose.
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      # Mount code để hot-reload, + named volume riêng cho node_modules (đã
+      # dùng từ task 2.2.1) - node_modules cài lúc build (Linux) PHẢI không bị
+      # đè bởi node_modules trên host (nếu có, khác OS/arch) khi bind mount
+      # ./frontend:/app đè lên - named volume ở đúng path con /app/node_modules
+      # "thắng" so với bind mount cha, giữ nguyên bản Linux đã cài trong image.
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "3000:3000"
+
+volumes:
+  mysql_data:
+    name: ecommerce_mysql_data
+  mongo_data:
+    name: ecommerce_mongo_data
+  frontend_node_modules:
+    name: ecommerce_frontend_node_modules

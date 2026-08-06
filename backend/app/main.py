@@ -2,10 +2,18 @@
 và include toàn bộ router theo docs/API_SPEC.md.
 """
 
-from fastapi import FastAPI
+import logging
+
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import get_settings
+from app.core.logging import setup_logging
+from app.core.middleware import RequestContextMiddleware
 from app.routers import (
     ai_chat,
     auth,
@@ -19,8 +27,11 @@ from app.routers import (
     review,
     user,
 )
+from app.schemas.common import ErrorResponse
 
 settings = get_settings()
+setup_logging()
+logger = logging.getLogger(__name__)
 
 # Thứ tự và mô tả tag khớp với thứ tự module trong docs/API_SPEC.md.
 TAGS_METADATA = [
@@ -62,6 +73,86 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# BaseHTTPMiddleware chỉ áp dụng cho scope "http" - KHÔNG chạy trên WebSocket
+# (/ws/chat), và không đo đúng thời gian phục vụ cho SSE (xem docstring trong
+# app/core/middleware.py).
+app.add_middleware(RequestContextMiddleware)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    """Bọc mọi HTTPException (401/403/404/429/501...) vào đúng envelope
+    `{ success, data, message }` theo docs/API_SPEC.md - mặc định FastAPI trả
+    `{"detail": ...}`, không khớp định dạng đã công bố. Router chỉ cần
+    `raise HTTPException(status_code=..., detail=...)` như bình thường, không
+    cần tự tạo ErrorResponse thủ công.
+    """
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(message=str(exc.detail)).model_dump(),
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """422 - Pydantic validate request (body/query/path) sai. Liệt kê rõ field
+    nào sai trong `message` để Frontend hiển thị lỗi form đúng chỗ.
+
+    CHỈ log tên field + lý do lỗi (`loc`, `msg`) - KHÔNG log `exc.body` (giá trị
+    gốc client gửi lên): field lỗi có thể chính là password/token (VD: đăng ký
+    với password quá ngắn), log nguyên body sẽ vô tình ghi plaintext bí mật vào
+    file log.
+    """
+    field_errors = [
+        {
+            "field": ".".join(str(part) for part in err["loc"] if part not in ("body", "query", "path")),
+            "message": err["msg"],
+        }
+        for err in exc.errors()
+    ]
+    message = "; ".join(f"{e['field']}: {e['message']}" for e in field_errors) or "Dữ liệu gửi lên không hợp lệ"
+
+    logger.warning("Validation error tại %s %s: %s", request.method, request.url.path, field_errors)
+
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content=ErrorResponse(message=message, error_code="VALIDATION_ERROR").model_dump(),
+    )
+
+
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:
+    """500 - lỗi DB (mất kết nối, constraint violation, deadlock do race
+    condition...). Log traceback đầy đủ để debug, response ra ngoài CHUNG CHUNG -
+    không lộ connection string/tên bảng/cột hay câu SQL thật cho client.
+    """
+    logger.error(
+        "Lỗi database tại %s %s: %s", request.method, request.url.path, exc.__class__.__name__, exc_info=True
+    )
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content=ErrorResponse(message="Lỗi hệ thống, vui lòng thử lại sau", error_code="DATABASE_ERROR").model_dump(),
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """500 - bắt mọi lỗi chưa lường trước. Đặt SAU CÙNG trong file để dễ đọc theo
+    thứ tự "cụ thể -> chung chung", dù thực tế Starlette tự chọn handler khớp
+    nhất theo MRO của exception (không phụ thuộc thứ tự @app.exception_handler
+    được gọi) - handler cụ thể hơn ở trên (HTTPException, RequestValidationError,
+    SQLAlchemyError) luôn được ưu tiên trước handler này với đúng loại lỗi tương ứng.
+    """
+    logger.error(
+        "Lỗi chưa xử lý tại %s %s: %s", request.method, request.url.path, exc.__class__.__name__, exc_info=True
+    )
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content=ErrorResponse(message="Lỗi hệ thống, vui lòng thử lại sau", error_code="INTERNAL_ERROR").model_dump(),
+    )
+
 
 API_PREFIX = "/api/v1"
 app.include_router(auth.router, prefix=API_PREFIX)

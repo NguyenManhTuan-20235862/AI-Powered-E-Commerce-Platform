@@ -32,6 +32,14 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# !.env*.example - PHẢI có dòng này (task 2.4.2 phát hiện thiếu): mặc định
+# `.env*` do Next.js scaffold sinh ra chặn LUÔN CẢ frontend/.env.example -
+# đã tự kiểm chứng bằng `git ls-files frontend/.env.example` trả về RỖNG dù
+# file đã tồn tại trên đĩa từ task 2.2.1 - file này CHƯA TỪNG commit được vào
+# repo vì bị chặn âm thầm, không ai để ý vì local vẫn thấy file bình thường
+# trên đĩa. Thêm exception để `.env.example`/`.env.production.example` (nếu
+# có sau này) commit được, các `.env`/`.env.local` thật vẫn bị chặn.
+!.env*.example
 
 # vercel
 .vercel

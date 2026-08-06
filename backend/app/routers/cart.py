@@ -1,6 +1,7 @@
 """Router: Cart Module (`/cart`).
 
-Khung endpoint theo docs/API_SPEC.md - mục 4. Toàn bộ endpoint yêu cầu Customer.
+Khung endpoint theo docs/API_SPEC.md - mục 4. Toàn bộ endpoint yêu cầu Customer
+(Admin bị chặn 403 - giỏ hàng không có ý nghĩa với tài khoản Admin).
 """
 
 from typing import Annotated
@@ -8,7 +9,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.openapi_responses import auth_responses
-from app.core.security import get_current_user
+from app.core.security import require_role
+from app.models.user import User, UserRole
 from app.schemas.cart import CartItemCreate, CartItemUpdate, CartRead
 from app.schemas.common import APIResponse, MessageResponse
 
@@ -19,9 +21,9 @@ router = APIRouter(prefix="/cart", tags=["Cart"])
     "",
     response_model=APIResponse[CartRead],
     summary="Xem giỏ hàng hiện tại",
-    responses=auth_responses(),
+    responses=auth_responses(forbidden=True),
 )
-def get_cart(current_user: Annotated[dict, Depends(get_current_user)]) -> APIResponse[CartRead]:
+def get_cart(current_user: Annotated[User, Depends(require_role(UserRole.customer))]) -> APIResponse[CartRead]:
     """Xem giỏ hàng hiện tại. Yêu cầu: Customer."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")
 
@@ -31,11 +33,11 @@ def get_cart(current_user: Annotated[dict, Depends(get_current_user)]) -> APIRes
     response_model=APIResponse[CartRead],
     summary="Thêm sản phẩm vào giỏ",
     status_code=status.HTTP_201_CREATED,
-    responses=auth_responses(),
+    responses=auth_responses(forbidden=True),
 )
 def add_cart_item(
     payload: CartItemCreate,
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.customer))],
 ) -> APIResponse[CartRead]:
     """Thêm sản phẩm vào giỏ. Yêu cầu: Customer."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")
@@ -45,12 +47,12 @@ def add_cart_item(
     "/items/{item_id}",
     response_model=APIResponse[CartRead],
     summary="Cập nhật số lượng sản phẩm trong giỏ",
-    responses=auth_responses(not_found=True),
+    responses=auth_responses(forbidden=True, not_found=True),
 )
 def update_cart_item(
     item_id: str,
     payload: CartItemUpdate,
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.customer))],
 ) -> APIResponse[CartRead]:
     """Cập nhật số lượng sản phẩm trong giỏ. Yêu cầu: Customer."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")
@@ -60,11 +62,11 @@ def update_cart_item(
     "/items/{item_id}",
     response_model=APIResponse[CartRead],
     summary="Xóa sản phẩm khỏi giỏ",
-    responses=auth_responses(not_found=True),
+    responses=auth_responses(forbidden=True, not_found=True),
 )
 def remove_cart_item(
     item_id: str,
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.customer))],
 ) -> APIResponse[CartRead]:
     """Xóa sản phẩm khỏi giỏ. Yêu cầu: Customer."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")
@@ -74,8 +76,8 @@ def remove_cart_item(
     "",
     response_model=MessageResponse,
     summary="Xóa toàn bộ giỏ hàng",
-    responses=auth_responses(),
+    responses=auth_responses(forbidden=True),
 )
-def clear_cart(current_user: Annotated[dict, Depends(get_current_user)]) -> MessageResponse:
+def clear_cart(current_user: Annotated[User, Depends(require_role(UserRole.customer))]) -> MessageResponse:
     """Xóa toàn bộ giỏ hàng. Yêu cầu: Customer."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")

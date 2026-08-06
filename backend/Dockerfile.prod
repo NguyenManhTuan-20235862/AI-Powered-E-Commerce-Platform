@@ -1,0 +1,67 @@
+# Dockerfile.prod — môi trường PRODUCTION cho Backend (task 2.1.2).
+# Khác Dockerfile.dev: multi-stage (image gọn, không mang theo pip cache/build
+# tool), chạy Gunicorn + Uvicorn worker (không --reload), user KHÔNG PHẢI root,
+# code COPY hẳn vào image (không volume mount).
+#
+# CHƯA cài requirements-ai.txt (langchain, langchain-openai) - giữ đúng nguyên
+# tắc như Dockerfile.dev, xem docs/KNOWN_TODOS.md mục #4 (cùng áp dụng cho file
+# này) và phần "task 6.1" ở cuối summary trả lời task 2.1.2.
+
+# ---- Stage 1: builder - cài dependency vào 1 venv riêng ----
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Venv riêng (không phải pip install --user vào /root) - copy nguyên cụm sang
+# stage runtime ở dưới, không mang theo pip cache, apt cache, hay build tool.
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy requirements TRƯỚC rồi mới install - tận dụng Docker layer cache, giống
+# nguyên tắc trong Dockerfile.dev.
+COPY requirements-core.txt requirements-prod.txt ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements-core.txt -r requirements-prod.txt
+
+# ---- Stage 2: runtime - image cuối, KHÔNG có build tool/pip cache ----
+FROM python:3.12-slim
+
+# User riêng, không dùng root để chạy app - nguyên tắc bảo mật cơ bản: nếu app
+# bị exploit (VD: lỗ hổng RCE trong 1 dependency), attacker chỉ có quyền của
+# appuser (không ghi được ngoài /app, không cài package, không đụng hệ thống).
+# --system: user/group hệ thống (không có password, không dùng để login).
+# --no-create-home: không cần thư mục home riêng, app không ghi gì ra đó.
+RUN groupadd --system appgroup && \
+    useradd --system --gid appgroup --no-create-home --shell /usr/sbin/nologin appuser
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
+
+# Copy venv đã cài sẵn từ stage builder - image cuối không có pip, không có
+# pip cache, không có gcc/build-essential (vốn dĩ cũng chưa từng cài, xem ghi
+# chú lý do chọn python:3.12-slim trong Dockerfile.dev).
+COPY --from=builder /opt/venv /opt/venv
+
+# Code COPY hẳn vào image (khác Dockerfile.dev dùng volume mount) - production
+# image phải tự chứa đủ code để chạy độc lập, không phụ thuộc mount từ host.
+# --chown ngay lúc copy để appuser sở hữu code (không cần RUN chown riêng,
+# đỡ tốn thêm 1 layer).
+COPY --chown=appuser:appgroup app/ ./app/
+COPY --chown=appuser:appgroup alembic/ ./alembic/
+COPY --chown=appuser:appgroup alembic.ini gunicorn_conf.py ./
+
+USER appuser
+
+EXPOSE 8000
+
+# Gunicorn quản lý N Uvicorn worker (xem công thức + giải thích timeout trong
+# gunicorn_conf.py) - khác hẳn "uvicorn --reload" của dev: không tự restart khi
+# đổi code (code cố định trong image, muốn đổi phải build lại image), nhiều
+# worker xử lý song song thay vì 1 process đơn.
+CMD ["gunicorn", "app.main:app", "-c", "gunicorn_conf.py"]
