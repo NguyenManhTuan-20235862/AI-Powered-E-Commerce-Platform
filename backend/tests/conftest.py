@@ -19,6 +19,7 @@ Mỗi test được cấp 1 schema sạch (drop_all rồi create_all trước kh
 """
 
 import pytest
+import redis
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine, make_url
@@ -27,6 +28,7 @@ from sqlalchemy.orm import Session, sessionmaker
 import app.models  # noqa: F401 - đăng ký model vào Base.metadata trước khi create_all
 from app.core.config import get_settings
 from app.core.database import Base, get_db
+from app.core.database import redis_client as shared_redis_client
 from app.main import app
 
 
@@ -78,6 +80,22 @@ def client(_test_engine: Engine) -> TestClient:
         yield TestClient(app, raise_server_exceptions=False)
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def redis_client() -> redis.Redis:
+    """Redis THẬT (container compose service `redis`, cùng triết lý với MySQL
+    ở `_test_engine` trên - không mock). Redis không có khái niệm schema để
+    drop_all/create_all như MySQL nên tự dọn mọi key `test:*` sau khi test
+    xong - tránh rác tồn đọng ảnh hưởng lần chạy pytest kế tiếp. Quy ước: MỌI
+    test dùng fixture này đặt cache key với tiền tố `test:` để được dọn đúng.
+    """
+    try:
+        yield shared_redis_client
+    finally:
+        keys = shared_redis_client.keys("test:*")
+        if keys:
+            shared_redis_client.delete(*keys)
 
 
 @pytest.fixture

@@ -8,10 +8,12 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pymongo.errors import PyMongoError
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import get_settings
+from app.core.database import mongo_client
 from app.core.logging import setup_logging
 from app.core.middleware import RequestContextMiddleware
 from app.routers import (
@@ -175,5 +177,29 @@ def root() -> dict[str, str]:
 
 @app.get("/health", tags=["Health Check"], summary="Kiểm tra service sống")
 def health() -> dict[str, str]:
-    """Health check endpoint - dùng cho Docker healthcheck / load balancer / CI."""
-    return {"status": "ok", "app": settings.APP_NAME, "env": settings.APP_ENV}
+    """Health check endpoint - dùng cho Docker healthcheck / load balancer / CI.
+
+    `status` (task 2.x, giữ nguyên) LUÔN "ok" nếu process FastAPI còn sống -
+    KHÔNG đổi theo kết quả ping MongoDB bên dưới, dù có thêm field `mongodb`
+    (task 3.2.3) báo trạng thái kết nối thật. Cố tình tách 2 khái niệm này:
+    Docker healthcheck (`docker-compose.yml`) chỉ dựa vào HTTP status code
+    (200 hay không) của response này để quyết định service "healthy" - nếu để
+    `status`/status code đổi theo MongoDB, 1 lần Mongo chập chờn sẽ khiến
+    Docker đánh dấu Backend "unhealthy" toàn bộ, kéo theo chặn Frontend khởi
+    động (`depends_on: backend: condition: service_healthy`) - dù hiện tại
+    KHÔNG có tính năng thật nào (auth/product/cart/order, đều dùng MySQL) phụ
+    thuộc MongoDB. `mongodb` chỉ mang tính THÔNG TIN cho người/monitoring đọc
+    thêm, không làm đổi hành vi healthcheck.
+    """
+    try:
+        mongo_client.admin.command("ping")
+        mongo_status = "ok"
+    except PyMongoError:
+        mongo_status = "unreachable"
+
+    return {
+        "status": "ok",
+        "app": settings.APP_NAME,
+        "env": settings.APP_ENV,
+        "mongodb": mongo_status,
+    }

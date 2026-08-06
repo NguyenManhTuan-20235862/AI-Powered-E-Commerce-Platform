@@ -6,12 +6,19 @@ Redis blacklist...) sẽ implement ở task 1.3.
 
 from typing import Annotated
 
+import redis
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import get_db, get_redis
 from app.core.openapi_responses import auth_responses
-from app.core.security import create_access_token, create_refresh_token, get_current_user
+from app.core.security import (
+    blacklist_access_token,
+    create_access_token,
+    create_refresh_token,
+    get_current_user,
+    get_token_payload,
+)
 from app.models.user import User
 from app.schemas.common import APIResponse, MessageResponse, success_response
 from app.schemas.user import RefreshTokenRequest, TokenPair, UserCreate, UserLogin, UserResponse
@@ -80,9 +87,24 @@ def refresh(payload: RefreshTokenRequest) -> APIResponse[TokenPair]:
     summary="Đăng xuất",
     responses=auth_responses(),
 )
-def logout(current_user: Annotated[User, Depends(get_current_user)]) -> MessageResponse:
-    """Đăng xuất, đưa refresh token vào Redis blacklist. Yêu cầu: Customer, Admin."""
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai - task 1.3")
+def logout(
+    # current_user: chỉ dùng làm cổng xác thực (401 nếu token đã hết hạn/sai/
+    # đã bị blacklist từ trước) - handler không cần current_user.id.
+    current_user: Annotated[User, Depends(get_current_user)],
+    payload: Annotated[dict, Depends(get_token_payload)],
+    redis_client: Annotated[redis.Redis, Depends(get_redis)],
+) -> MessageResponse:
+    """Đăng xuất - đưa ACCESS token đang dùng vào Redis blacklist (task 3.3.2).
+
+    CHỈ blacklist access token, KHÔNG blacklist refresh token - `POST /auth/refresh`
+    hiện vẫn `501` (chưa có logic thật nào tiêu thụ refresh token), nên chưa
+    có đường khai thác thật nào cần chặn ở phía refresh token; xem
+    docs/KNOWN_TODOS.md cho việc cần làm khi `/auth/refresh` implement thật.
+
+    Yêu cầu: Customer, Admin.
+    """
+    blacklist_access_token(redis_client, payload)
+    return MessageResponse(message="Đăng xuất thành công")
 
 
 @router.get(
