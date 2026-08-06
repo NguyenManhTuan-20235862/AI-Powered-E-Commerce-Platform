@@ -223,11 +223,19 @@ Xem thêm task 2.2.1.
   tổng hợp toàn bộ biến, khỏi phải lục 3 file rải rác). Bỏ qua 1 trong 2 sẽ
   lặp lại đúng kiểu lệch đã gặp ở `docs/KNOWN_TODOS.md` #6/#7/#8.
 - **`get_current_user` decode JWT THẬT** (`backend/app/core/security.py`, task
-  1.3.3) — verify chữ ký + hạn token bằng `JWT_SECRET_KEY`/`JWT_ALGORITHM`,
-  load đúng `User` từ MySQL theo `sub` trong payload, 401 nếu thiếu/sai/hết
-  hạn token hoặc `is_active=False`. `require_role(*roles)` (dependency factory
-  dùng SAU `get_current_user`) check role thật của user, 403 nếu không đủ
-  quyền. Có thể dựa vào role/`is_active` trả về từ đây cho logic thật.
+  1.3.3) — verify chữ ký + hạn token bằng `JWT_SECRET_KEY`/`JWT_ALGORITHM`
+  (qua dependency riêng `get_token_payload`, tách từ task 3.3.2 để
+  `POST /auth/logout` tái dùng mà không phải decode token 2 lần), CHECK
+  BLACKLIST qua Redis (`is_token_blacklisted`, task 3.3.2 — key
+  `blacklist:jti:<jti>`, set lúc `POST /auth/logout` với TTL = thời gian còn
+  lại tới lúc token hết hạn tự nhiên), rồi load đúng `User` từ MySQL theo
+  `sub` trong payload, 401 nếu thiếu/sai/hết hạn/đã bị blacklist hoặc
+  `is_active=False`. Redis lỗi lúc check blacklist → **fail-open** (coi như
+  chưa bị blacklist, quyết định có chủ đích — Redis hiện không persist/không
+  cluster, fail-closed sẽ biến Redis thành SPOF cho toàn bộ endpoint cần đăng
+  nhập). `require_role(*roles)` (dependency factory dùng SAU `get_current_user`)
+  check role thật của user, 403 nếu không đủ quyền. Có thể dựa vào role/
+  `is_active` trả về từ đây cho logic thật.
 - **Rate limit AI chat dùng Redis** — `/ai/chat` và `/ws/chat` cần giới hạn tần suất
   theo user (xem `docs/API_SPEC.md` mục 8), hiện CHƯA implement, chỉ mới khai báo
   response `429` trong docs.
