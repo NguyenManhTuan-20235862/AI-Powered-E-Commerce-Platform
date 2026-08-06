@@ -1,16 +1,22 @@
-# Database Schema — MySQL
+# Database Schema — MySQL & MongoDB
 
 **Task WBS:** 1.3.1 (bảng `users`) + 3.1.1 (ERD đầy đủ, dbdiagram.io) + 3.1.2
-(model Category/Product) + 3.1.3 (model CartItem/Order/OrderItem/Payment)
-**Phạm vi:** Đủ 7 bảng — `users`, `categories`, `products`, `cart_items`,
-`orders`, `order_items`, `payments`
-**Công nghệ:** MySQL 8, SQLAlchemy 2.0 (ORM), Alembic (migration)
+(model Category/Product) + 3.1.3 (model CartItem/Order/OrderItem/Payment) +
+3.1.4 (Alembic migration) + 3.2.1 (collection MongoDB `chat_logs`) + 3.2.2
+(collection MongoDB `reviews`)
+**Phạm vi:** Đủ 7 bảng MySQL — `users`, `categories`, `products`, `cart_items`,
+`orders`, `order_items`, `payments` — VÀ 2 collection MongoDB — `chat_logs`,
+`reviews`
+**Công nghệ:** MySQL 8, SQLAlchemy 2.0 (ORM), Alembic (migration) cho phần
+quan hệ; MongoDB (PyMongo) cho phần phi cấu trúc
 **Model code thật:** `app/models/user.py`, `category.py`, `product.py`, `cart.py`,
-`order.py` (Order/OrderItem/Payment cùng file) — file này là tài liệu SCHEMA
-(cột/ràng buộc/index/lý do nghiệp vụ), KHÔNG lặp lại toàn bộ code Python cho 6
-bảng mới (khác cách trình bày bảng `users` bên dưới, viết từ trước khi có code
-thật) để tránh 2 nguồn dễ lệch nhau — code trong `app/models/` mới là nguồn
-chính thức, sửa gì thì đồng bộ lại bảng ở đây.
+`order.py` (Order/OrderItem/Payment cùng file) cho MySQL — `app/schemas/chat_log.py`
+(Pydantic, KHÔNG phải SQLAlchemy — MongoDB không có ORM quan hệ) cho `chat_logs`.
+File này là tài liệu SCHEMA (cột/field/ràng buộc/index/lý do nghiệp vụ), KHÔNG
+lặp lại toàn bộ code Python cho 6 bảng MySQL mới + collection MongoDB (khác
+cách trình bày bảng `users` bên dưới, viết từ trước khi có code thật) để tránh
+2 nguồn dễ lệch nhau — code trong `app/models/`/`app/schemas/chat_log.py` mới
+là nguồn chính thức, sửa gì thì đồng bộ lại bảng ở đây.
 
 ---
 
@@ -247,14 +253,165 @@ Còn lại, ngoài MySQL:
 
 ---
 
+## MongoDB Collections
+
+MongoDB **không có FK/CHECK constraint thật** như MySQL — mọi ràng buộc kiểu
+dữ liệu chỉ enforce ở tầng ứng dụng (Pydantic, `app/schemas/`), MongoDB tự nó
+chấp nhận bất kỳ document nào (schema-less). Các mục "FOREIGN KEY" bên dưới vì
+vậy chỉ mang tính THAM CHIẾU LOGIC (field thường trỏ tới ID ở nơi khác), khác
+hẳn ý nghĩa "FOREIGN KEY" ở phần MySQL phía trên — xem giải thích chi tiết ở
+từng collection.
+
+### Collection `chat_logs` (task 3.2.1)
+
+**Quyết định thiết kế: 1 document / 1 TIN NHẮN** (không phải 1 document / 1
+session với mảng `messages` lồng bên trong). Lý do đầy đủ xem docstring
+`app/schemas/chat_log.py`, tóm tắt:
+- Insert khớp tự nhiên với luồng ghi thật (mỗi tin nhắn tới → insert ngay,
+  không cần find-rồi-`$push` vào document session đang có).
+- Tránh rủi ro vượt giới hạn cứng 16MB/document của MongoDB nếu 1 session chat
+  rất dài.
+- Query lịch sử theo user (`GET /ai/chat/history`) và Admin duyệt toàn bộ log
+  (`GET /ai/chat/logs`) đều là query PHẲNG trên field top-level (`user_id`,
+  `session_id`, `created_at`) — không cần `$unwind` aggregation như khi dữ
+  liệu nằm trong mảng lồng.
+- `session_id` vẫn dùng để GOM NHÓM tin nhắn cùng 1 phiên (query
+  `{session_id: ...}` sort theo `created_at`) — chỉ là field thường trên từng
+  document, không phải cấu trúc lồng vật lý.
+
+| Field | Kiểu dữ liệu | Bắt buộc? | Mô tả |
+|---|---|---|---|
+| `_id` | `ObjectId` | Tự sinh | Định danh document, MongoDB tự tạo lúc insert |
+| `user_id` | `Int64` (khớp `BIGINT` của `users.id` bên MySQL) | NOT NULL | Chủ hội thoại — xem mục "Tham chiếu logic" bên dưới |
+| `session_id` | `String` | NOT NULL | Nhóm các tin nhắn cùng 1 phiên chat — do tầng service sinh (VD `uuid4`), 1 user có thể có nhiều session theo thời gian |
+| `role` | `String` — `"user"` \| `"assistant"` \| `"system"` \| `"tool"` | NOT NULL | Ai gửi tin nhắn — 2 giá trị đầu dùng ngay ở task 3.2.1, `"system"`/`"tool"` để sẵn cho task 6.3 (tool calling) |
+| `message` | `String` | NOT NULL | Nội dung tin nhắn (text) |
+| `metadata` | `Object` (linh hoạt, không cố định field con) | NULLABLE | VD: sản phẩm AI gợi ý kèm tin nhắn, `tool_calls` (task 6.3), thông tin model/token — cấu trúc con quyết định khi có code AI Agent thật |
+| `created_at` | `Date` (UTC) | NOT NULL | Thời điểm tạo tin nhắn |
+
+### Index đề xuất (task 3.2.1 — CHỈ liệt kê, CHƯA tạo thật)
+
+Chưa chạy `create_index()` thật ở task này (collection còn chưa tồn tại — lazy
+create khi có write đầu tiên, xem task 2.3.2) — để task 3.2.3 (kết nối PyMongo
+thật) tạo cùng lúc với code kết nối, tránh tạo index cho collection chưa có
+document nào:
+
+- **`(user_id, created_at)`** — chính, phục vụ `GET /ai/chat/history` (lịch sử
+  của 1 user, sort theo thời gian, phân trang).
+- **`(session_id, created_at)`** — dựng lại đúng thứ tự hội thoại trong 1
+  session (gom nhóm theo `session_id`, sort theo `created_at`).
+- **`(created_at)`** riêng — phục vụ Admin duyệt log toàn hệ thống theo thời
+  gian (`GET /ai/chat/logs`) khi KHÔNG lọc theo `user_id` cụ thể.
+
+### Tham chiếu logic (KHÔNG phải Foreign Key thật)
+
+- `chat_logs.user_id → users.id` (MySQL): chỉ là field thường, **KHÔNG có ràng
+  buộc toàn vẹn thật giữa 2 hệ CSDL khác nhau**. Hệ quả cụ thể: xóa 1 user ở
+  MySQL **KHÔNG** tự động xóa/cập nhật các document `chat_logs` liên quan —
+  nếu nghiệp vụ cần giữ toàn vẹn (VD: xóa user thật thì cũng nên xóa/ẩn log
+  chat của họ), phải tự xử lý ở tầng service (gọi thêm 1 lệnh
+  `delete_many`/cập nhật riêng trên `chat_logs` khi xóa user) — không có cơ
+  chế DB nào tự làm việc này thay cho code.
+- Tương tự, `products.id`/`orders.id` (MySQL) CÓ THỂ được tham chiếu trong
+  `metadata` (VD sản phẩm AI gợi ý) — cùng tính chất tham chiếu logic, không
+  phải FK thật.
+
+### Collection `reviews` (task 3.2.2)
+
+**Quyết định thiết kế 1 — denormalize `user_name`** (snapshot tên user lúc
+viết review, không chỉ lưu `user_id` rồi join ngược MySQL): tránh N+1/batch
+query sang MySQL chỉ để lấy tên hiển thị mỗi lần load trang review của 1 sản
+phẩm. Đánh đổi: nếu user đổi `full_name` sau khi đã review, review CŨ vẫn
+hiển thị tên CŨ (không tự đồng bộ) — **chấp nhận độ lệch này**, KHÔNG xây cơ
+chế đồng bộ (event/job nghe đổi tên rồi `update_many`) vì chi phí xây/bảo trì
+không tương xứng lợi ích cho dự án đồ án solo. Xem phân tích đầy đủ ở
+docstring `app/schemas/review.py`.
+
+**Quyết định thiết kế 2 — soft-delete (`is_deleted`) thay vì xóa cứng** khi
+Admin gọi `DELETE /reviews/{review_id}`: KHÁC lý do soft-delete của
+`products.is_active` (ràng buộc toàn vẹn thật — `order_items` vẫn cần tham
+chiếu sản phẩm cũ). Review không có bảng nào tham chiếu ngược `reviews.id` —
+lý do soft-delete ở đây là MODERATION: giữ audit trail (Admin nào xóa gì) +
+cho phép undo nếu xóa nhầm, đánh đổi lại là mọi query công khai phải nhớ lọc
+`is_deleted: false` (tập trung trong 1 hàm repository dùng chung, task 6.x,
+không rải rác). `is_deleted` là field NỘI BỘ — không xuất hiện trong response
+API công khai (`ReviewRead`), chỉ có ở document raw (`ReviewInDB`).
+
+| Field | Kiểu dữ liệu | Bắt buộc? | Mô tả |
+|---|---|---|---|
+| `_id` | `ObjectId` | Tự sinh | Định danh document |
+| `product_id` | `Int64` (khớp `BIGINT` của `products.id` bên MySQL) | NOT NULL | Sản phẩm được review |
+| `user_id` | `Int64` (khớp `BIGINT` của `users.id` bên MySQL) | NOT NULL | Người viết review |
+| `user_name` | `String` | NOT NULL | Tên user — DENORMALIZE, snapshot lúc viết (xem quyết định thiết kế 1) |
+| `order_id` | `Int64` (khớp `BIGINT` của `orders.id` bên MySQL) | NOT NULL | Đơn hàng chứng minh đã mua — bắt buộc vì `POST /products/{id}/reviews` chỉ cho viết khi đã mua (`docs/API_SPEC.md` mục 7), không có luồng review chưa xác minh |
+| `rating` | `Int32` | NOT NULL, 1–5 | Số sao đánh giá |
+| `comment` | `String` | NULLABLE | Nội dung review |
+| `images` | `Array<String>` (URL) | NULLABLE | Ảnh review — để ngỏ mở rộng, chưa có route upload thật trong repo |
+| `is_verified_purchase` | `Boolean` | NOT NULL, mặc định `true` | Luôn `true` với dữ liệu hợp lệ hiện tại (suy ra từ `order_id` bắt buộc) — giữ tường minh để đọc trực tiếp + forward-compatible nếu nghiệp vụ đổi sau này |
+| `is_deleted` | `Boolean` | NOT NULL, mặc định `false` | Cờ soft-delete nội bộ (xem quyết định thiết kế 2) — KHÔNG lộ ra response API công khai |
+| `created_at` | `Date` (UTC) | NOT NULL | Thời điểm viết review |
+| `updated_at` | `Date` (UTC) | NULLABLE | Thời điểm cập nhật gần nhất (VD Admin soft-delete) |
+
+### Index đề xuất — `reviews` (task 3.2.2 — CHỈ liệt kê, CHƯA tạo thật)
+
+Cùng lý do chưa tạo thật như `chat_logs` (để task 3.2.3 tạo cùng lúc với code
+kết nối PyMongo):
+
+- **`(product_id, is_deleted, created_at)`** — phục vụ `GET /products/{id}/reviews`
+  (lọc theo sản phẩm + loại bỏ review đã xóa mềm, sort theo thời gian). Thêm
+  `is_deleted` vào giữa (không chỉ `(product_id, created_at)` như đề xuất ban
+  đầu) theo nguyên tắc ESR (Equality → Sort → Range) của MongoDB — cả
+  `product_id` và `is_deleted` đều là điều kiện equality trong query thật,
+  đặt trước field dùng để sort (`created_at`) thì index mới được tận dụng tối
+  đa.
+- **`(user_id, order_id, product_id)` UNIQUE** — xác nhận đây là ràng buộc
+  hợp lý: chặn 1 user gửi NHIỀU review trùng lặp cho CÙNG 1 sản phẩm TỪ CÙNG
+  1 đơn hàng (spam-submit), nhưng VẪN cho phép review lại nếu mua ở đơn hàng
+  KHÁC (trải nghiệm lần mua sau có thể khác). Không dùng partial filter
+  (`is_deleted`) — sau khi bị Admin xóa mềm, user không viết lại được review
+  cho đúng đơn hàng/sản phẩm đó nữa (chấp nhận, tránh lách luật viết bậy →
+  xóa → viết bậy tiếp; có thể đổi sang partial unique index sau nếu nghiệp vụ
+  cần cho "viết lại").
+
+### Tham chiếu logic — `reviews` (KHÔNG phải Foreign Key thật)
+
+- `reviews.product_id/order_id → products.id/orders.id`, `reviews.user_id →
+  users.id` (MySQL): cùng tính chất với `chat_logs` ở trên — field thường,
+  KHÔNG có ràng buộc toàn vẹn thật giữa 2 hệ CSDL. Rủi ro thực tế hiện THẤP
+  vì cả 3 bảng MySQL liên quan đều KHÔNG có đường xóa cứng trong thiết kế
+  hiện tại (`products`/`users` dùng soft-delete qua `is_active`,
+  `orders`/`order_items` bị `ON DELETE RESTRICT` chặn xóa khi còn tham
+  chiếu) — nhưng vẫn KHÔNG có gì ở tầng DB đảm bảo `product_id`/`order_id`/
+  `user_id` trong 1 document `reviews` còn trỏ tới bản ghi tồn tại thật; nếu
+  sau này thêm đường xóa cứng ở MySQL, phải tự xử lý đồng bộ ở tầng service.
+
+---
+
 ## Ghi chú
 
-- File này giờ cover đủ 7 bảng theo ERD đã chốt ở task 3.1.1 (trước đó — task
-  1.3.1 — chỉ có bảng `users`).
+- File này giờ cover đủ 7 bảng MySQL theo ERD đã chốt ở task 3.1.1 (trước đó —
+  task 1.3.1 — chỉ có bảng `users`) — VÀ 2 collection MongoDB `chat_logs`
+  (task 3.2.1), `reviews` (task 3.2.2).
 - Model code thật (`app/models/`) đã tạo ở task 3.1.2 (Category, Product) và
-  3.1.3 (CartItem, Order, OrderItem, Payment) — **CHƯA chạy Alembic migration**
-  (`alembic revision --autogenerate`), cố tình dừng lại để review model trước
-  khi sinh migration - đó là task 3.1.4 riêng.
-- `CHECK (stock_quantity >= 0)` của bảng `products` cố tình CHƯA có trong model
-  (xem mục CHECK constraint ở bảng `products` phía trên) - sẽ thêm bằng
-  migration Alembic thủ công (không phải autogenerate) ở task 3.1.4.
+  3.1.3 (CartItem, Order, OrderItem, Payment), đã chạy Alembic migration
+  thật ở task 3.1.4 (`alembic/versions/fdf5ca1856fe_...py`, test round-trip
+  upgrade→downgrade→upgrade trên MySQL thật — xem `docs/KNOWN_TODOS.md` #11
+  cho 1 bug thật đã gặp + sửa trong quá trình đó).
+- `CHECK (stock_quantity >= 0)` của bảng `products` đã thêm THỦ CÔNG vào
+  migration Alembic (không phải autogenerate, DBML không hỗ trợ khai báo
+  CHECK) ở task 3.1.4 — đã verify MySQL 8 enforce thật.
+- Collection `chat_logs` (task 3.2.1) mới dừng ở THIẾT KẾ document + schema
+  Pydantic tham chiếu (`app/schemas/chat_log.py`) + đề xuất index — CHƯA có
+  code kết nối PyMongo thật (task 3.2.3) và CHƯA có logic ghi/đọc thật (task
+  5.1 WebSocket, 6.x AI Agent) — 2 endpoint liên quan
+  (`GET /ai/chat/history`, `GET /ai/chat/logs`, `app/routers/ai_chat.py`) vẫn
+  đang `501`.
+- Collection `reviews` (task 3.2.2) cùng tình trạng — mới THIẾT KẾ document +
+  schema Pydantic (`app/schemas/review.py`, đã cập nhật từ placeholder tối
+  giản trước đó — vẫn giữ tên `ReviewCreate`/`ReviewRead` để khớp import có
+  sẵn ở `app/routers/review.py`, thêm mới `ReviewInDB` cho tầng service đọc
+  raw document sau này) + đề xuất index — CHƯA có code kết nối PyMongo thật
+  (task 3.2.3) và CHƯA có logic ghi/đọc thật hay logic verify "đã mua hàng
+  chưa" (task 6.x) — cả 3 endpoint liên quan (`GET /products/{id}/reviews`,
+  `POST /products/{id}/reviews`, `DELETE /reviews/{review_id}`,
+  `app/routers/review.py`) vẫn đang `501`.
