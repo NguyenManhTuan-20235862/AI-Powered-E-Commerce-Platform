@@ -35,11 +35,15 @@ def test_protected_endpoint_requires_auth(client: TestClient) -> None:
     assert response.status_code == 401
 
 
-def test_protected_endpoint_reaches_placeholder_with_token(client: TestClient) -> None:
-    response = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer fake-token"})
-    assert response.status_code == 501
+# test_protected_endpoint_reaches_placeholder_with_token (task 1.2.2) đã bị xóa:
+# get_current_user giờ decode JWT thật (task 1.3.3) nên 1 chuỗi Bearer bất kỳ
+# ("fake-token") không còn qua được nữa - hành vi này giờ được test đầy đủ hơn
+# ở tests/test_security.py (token thật/hết hạn/sai định dạng/đúng-sai role).
 
 
 def test_public_endpoint_does_not_require_auth(client: TestClient) -> None:
+    """GET /products (task 3.4.1, implement thật) không còn là placeholder
+    501 - trả 200 thật (danh sách rỗng, chưa seed sản phẩm nào) là bằng
+    chứng RÕ RÀNG hơn hẳn "vượt qua auth rồi rơi vào 501" trước đây."""
     response = client.get("/api/v1/products")
-    assert response.status_code == 501
+    assert response.status_code == 200

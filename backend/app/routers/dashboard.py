@@ -9,7 +9,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.openapi_responses import auth_responses
-from app.core.security import get_current_user
+from app.core.security import require_role
+from app.models.user import User, UserRole
 from app.schemas.common import APIResponse
 from app.schemas.dashboard import DashboardSummaryRead, RevenuePointRead, TopProductRead
 
@@ -22,7 +23,9 @@ router = APIRouter(prefix="/admin/dashboard", tags=["Dashboard Admin"])
     summary="Tổng quan: tổng doanh thu, số đơn hàng, số user mới",
     responses=auth_responses(forbidden=True),
 )
-def get_summary(current_user: Annotated[dict, Depends(get_current_user)]) -> APIResponse[DashboardSummaryRead]:
+def get_summary(
+    current_user: Annotated[User, Depends(require_role(UserRole.admin))],
+) -> APIResponse[DashboardSummaryRead]:
     """Tổng quan: tổng doanh thu, số đơn hàng, số user mới. Yêu cầu: Admin."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")
 
@@ -33,7 +36,9 @@ def get_summary(current_user: Annotated[dict, Depends(get_current_user)]) -> API
     summary="Doanh thu theo ngày/tuần/tháng",
     responses=auth_responses(forbidden=True),
 )
-def get_revenue(current_user: Annotated[dict, Depends(get_current_user)]) -> APIResponse[list[RevenuePointRead]]:
+def get_revenue(
+    current_user: Annotated[User, Depends(require_role(UserRole.admin))],
+) -> APIResponse[list[RevenuePointRead]]:
     """Doanh thu theo ngày/tuần/tháng (dữ liệu cho chart). Yêu cầu: Admin."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")
 
@@ -45,7 +50,7 @@ def get_revenue(current_user: Annotated[dict, Depends(get_current_user)]) -> API
     responses=auth_responses(forbidden=True),
 )
 def get_top_products(
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.admin))],
 ) -> APIResponse[list[TopProductRead]]:
     """Top sản phẩm bán chạy. Yêu cầu: Admin."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")

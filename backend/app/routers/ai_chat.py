@@ -5,7 +5,10 @@ sẽ implement ở các task liên quan AI Agent / WebSocket.
 
 Lưu ý: OpenAPI (Swagger) KHÔNG hỗ trợ mô tả route WebSocket - endpoint `/ws/chat`
 sẽ không xuất hiện trên Swagger UI dù đã được include vào app (giới hạn của
-chuẩn OpenAPI, không phải lỗi cấu hình).
+chuẩn OpenAPI, không phải lỗi cấu hình). Endpoint này CŨNG CHƯA dùng
+get_current_user/require_role - OAuth2PasswordBearer (Authorization header) không
+áp dụng được cho WebSocket handshake theo cách thông thường; xác thực WS cần đọc
+token qua query string/subprotocol, để lại cho task AI Agent implement riêng.
 """
 
 from typing import Annotated
@@ -13,7 +16,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, status
 
 from app.core.openapi_responses import auth_responses, rate_limit_response
-from app.core.security import get_current_user
+from app.core.security import require_role
+from app.models.user import User, UserRole
 from app.schemas.ai_chat import ChatMessageCreate, ChatMessageRead, ChatReplyRead
 from app.schemas.common import APIResponse
 
@@ -35,11 +39,11 @@ async def chat_websocket(websocket: WebSocket) -> None:
     "/ai/chat",
     response_model=APIResponse[ChatReplyRead],
     summary="(Fallback REST) Gửi tin nhắn tới AI Agent, nhận phản hồi",
-    responses={**auth_responses(), **rate_limit_response()},
+    responses={**auth_responses(forbidden=True), **rate_limit_response()},
 )
 def send_chat_message(
     payload: ChatMessageCreate,
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.customer))],
 ) -> APIResponse[ChatReplyRead]:
     """Fallback REST khi không dùng WebSocket. Yêu cầu: Customer. Có rate limit theo user (Redis)."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai - task AI Agent")
@@ -49,10 +53,10 @@ def send_chat_message(
     "/ai/chat/history",
     response_model=APIResponse[list[ChatMessageRead]],
     summary="Lịch sử hội thoại của user hiện tại",
-    responses=auth_responses(),
+    responses=auth_responses(forbidden=True),
 )
 def get_chat_history(
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.customer))],
 ) -> APIResponse[list[ChatMessageRead]]:
     """Lịch sử hội thoại của user (từ MongoDB ChatLog). Yêu cầu: Customer."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai - task AI Agent")
@@ -65,7 +69,7 @@ def get_chat_history(
     responses=auth_responses(forbidden=True),
 )
 def get_chat_logs(
-    current_user: Annotated[dict, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_role(UserRole.admin))],
 ) -> APIResponse[list[ChatMessageRead]]:
     """Xem log hội thoại toàn hệ thống (phục vụ tune prompt). Yêu cầu: Admin."""
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai - task AI Agent")

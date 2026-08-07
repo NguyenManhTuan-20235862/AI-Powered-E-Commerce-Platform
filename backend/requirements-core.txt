@@ -1,0 +1,43 @@
+# Dependency lõi - CẦN cho toàn bộ backend chạy được (auth, DB, API...), kể cả
+# trong image production. Tách riêng:
+# - requirements-ai.txt (langchain, langchain-openai) - AI Agent chưa có code
+#   nào dùng tới (task 6.x).
+# - requirements-test.txt (pytest, httpx) - chỉ cần lúc dev/test, không cần lúc
+#   chạy thật, production không cài (task 2.1.2).
+
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Config
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+email-validator==2.2.0
+
+# MySQL / SQLAlchemy
+sqlalchemy==2.0.36
+alembic==1.14.0
+pymysql==1.1.1
+
+# MongoDB
+pymongo==4.10.1
+
+# Redis
+redis==5.2.1
+
+# Scheduler (task 3.5.2) - backend/scripts/run_scheduler.py, chạy trong
+# service compose RIÊNG `product-sync-scheduler` (không phải tiến trình
+# FastAPI/Gunicorn) - vẫn để ở requirements-core.txt (không phải file riêng)
+# vì service đó DÙNG LẠI NGUYÊN Dockerfile.dev/Dockerfile.prod của Backend
+# (chỉ đổi CMD), cùng 1 image/bước cài dependency với app FastAPI.
+apscheduler==3.10.4
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+# passlib 1.7.4 (không còn maintain) không tương thích với bcrypt>=4.1 (đổi API,
+# passlib báo lỗi "password cannot be longer than 72 bytes" hoặc AttributeError
+# khi hash/verify) - ghim bản bcrypt cũ để tránh lỗi này.
+bcrypt==4.0.1
+python-multipart==0.0.20

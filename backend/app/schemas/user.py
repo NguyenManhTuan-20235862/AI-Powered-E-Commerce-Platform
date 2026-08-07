@@ -5,9 +5,10 @@ Khớp với bảng `users` trong docs/DATABASE_SCHEMA.md (task 1.3.1).
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field
 
 from app.models.user import UserRole
+from app.schemas.base import BaseSchema
 
 
 class UserCreate(BaseModel):
@@ -24,10 +25,8 @@ class UserCreate(BaseModel):
     address: str | None = Field(default=None, max_length=500)
 
 
-class UserResponse(BaseModel):
+class UserResponse(BaseSchema):
     """Response trả về API - LOẠI TRỪ `password_hash`."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: int
     email: EmailStr
