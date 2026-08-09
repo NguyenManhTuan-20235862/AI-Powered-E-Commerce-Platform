@@ -50,6 +50,11 @@ class Order(Base):
         index=True,
     )
     total_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    # Snapshot lúc đặt (task 4.3.2, cùng nguyên tắc shipping_address/
+    # shipping_phone bên dưới) - KHÔNG tham chiếu users.full_name: người NHẬN
+    # hàng có thể khác chủ tài khoản (VD đặt hộ/tặng), tên tài khoản đổi sau
+    # này cũng không được làm lệch tên đã ghi trên đơn cũ.
+    shipping_name: Mapped[str] = mapped_column(String(150), nullable=False)
     shipping_address: Mapped[str] = mapped_column(String(500), nullable=False)
     shipping_phone: Mapped[str] = mapped_column(String(20), nullable=False)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)

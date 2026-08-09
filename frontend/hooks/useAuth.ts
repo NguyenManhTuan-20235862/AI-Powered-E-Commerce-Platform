@@ -13,7 +13,14 @@ import type { User } from "@/types/user";
 type MeApiResponse = {
   success: boolean;
   message: string;
-  data: { id: number; email: string; full_name: string; role: "customer" | "admin" };
+  data: {
+    id: number;
+    email: string;
+    full_name: string;
+    phone: string | null;
+    address: string | null;
+    role: "customer" | "admin";
+  };
 };
 
 /**
@@ -40,6 +47,8 @@ export function useAuth() {
         id: data.data.id,
         email: data.data.email,
         fullName: data.data.full_name,
+        phone: data.data.phone,
+        address: data.data.address,
         role: data.data.role,
       });
     } catch {

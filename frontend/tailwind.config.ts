@@ -38,6 +38,10 @@ const config: Config = {
           800: "var(--color-accent-2-800)",
           900: "var(--color-accent-2-900)",
         },
+        error: {
+          DEFAULT: "var(--color-error)",
+          container: "var(--color-error-container)",
+        },
       },
       fontFamily: {
         // sans = mặc định site (body text) - trỏ luôn về Figtree, để những

@@ -18,7 +18,11 @@ from app.models.order import Order, OrderStatus
 from app.models.product import Product
 from app.models.user import User, UserRole
 
-VALID_CHECKOUT_PAYLOAD = {"shipping_address": "123 Đường ABC, Q1, TP.HCM", "shipping_phone": "0900000000"}
+VALID_CHECKOUT_PAYLOAD = {
+    "shipping_name": "Nguyễn Văn A",
+    "shipping_address": "123 Đường ABC, Q1, TP.HCM",
+    "shipping_phone": "0900000000",
+}
 
 
 def _create_category(db: Session) -> Category:

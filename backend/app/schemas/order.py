@@ -18,6 +18,7 @@ class OrderCreate(BaseModel):
     prefill từ profile ở UI nếu muốn, đó là việc của Frontend, không phải
     Backend ngầm suy ra)."""
 
+    shipping_name: str = Field(min_length=1, max_length=150)
     shipping_address: str = Field(min_length=1, max_length=500)
     shipping_phone: str = Field(min_length=1, max_length=20)
     note: str | None = Field(default=None, max_length=500)
@@ -40,6 +41,7 @@ class OrderRead(BaseSchema):
     user_id: int
     status: OrderStatus
     total_amount: Decimal
+    shipping_name: str
     shipping_address: str
     shipping_phone: str
     note: str | None = None
