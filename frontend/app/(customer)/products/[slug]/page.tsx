@@ -75,7 +75,7 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
         </section>
       )}
 
-      <section className="mx-auto mb-16 max-w-3xl rounded-3xl bg-surface/30 py-16 text-center shadow-soft">
+      <section className="mx-auto mb-16 max-w-3xl rounded-3xl bg-surface/30 py-16 text-center shadow-warm">
         <h2 className="mb-6 font-heading text-2xl text-foreground">Đánh giá sản phẩm</h2>
         <div className="flex flex-col items-center gap-4 px-6 text-foreground-secondary">
           <span className="flex h-16 w-16 items-center justify-center rounded-full bg-surface text-foreground-muted">
