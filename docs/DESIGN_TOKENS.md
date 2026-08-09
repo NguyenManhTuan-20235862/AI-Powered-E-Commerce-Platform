@@ -37,6 +37,8 @@ biệt không biểu diễn gọn bằng utility (giống lý do giữ nguyên `
 | `bg-primary-100`/`700`/`800`, tương tự `300` | `--color-accent-100/300/700/800` | xem `globals.css` | Sắc độ nhạt/đậm của primary — banner lỗi, badge, text trên nền nhạt. |
 | `bg-secondary` / `text-secondary` | `--color-accent-2` | `#7a8a5e` | Màu phụ (xanh rêu) — banner thành công, tag, panel minh họa. |
 | `bg-secondary-100`/`300`/`800`/`900` | `--color-accent-2-*` | xem `globals.css` | Sắc độ của secondary — tương tự primary. |
+| `bg-error` / `text-error` | `--color-error` | `#ba1a1a` | Lỗi/danger (validate form, banner lỗi API) — task 4.3.2, thêm mới (trước đó chưa có token lỗi nào). Đỏ Material chuẩn, CỐ TÌNH tách khỏi bảng "đất/rêu" thương hiệu — màu lỗi cần nổi bật/dễ nhận biết hơn là nhất quán tông ấm. |
+| `bg-error-container` | `--color-error-container` | `#ffdad6` | Nền nhạt cho banner lỗi (dùng cùng `text-error` cho chữ, tương tự cách `primary-100` dùng cho banner primary). |
 | `border-border` | `--color-divider` (`color-mix`) | text 16% opacity | Viền input/card/divider — mờ, không dùng màu xám trung tính rời rạc. |
 | `font-heading` | `--font-heading` | Caprasimo | Heading, brand mark, button, tab — chữ có cá tính. |
 | `font-body` (= mặc định `font-sans`) | `--font-body` | Figtree | Body text, input, label, paragraph. |

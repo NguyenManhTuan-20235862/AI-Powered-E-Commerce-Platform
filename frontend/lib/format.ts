@@ -32,3 +32,22 @@ export function resolveProductImageUrl(imageUrl: string | null): string | null {
   if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) return imageUrl;
   return `${API_ORIGIN}${imageUrl}`;
 }
+
+// task 4.3.2 - bản CLIENT-SAFE của resolveProductImageUrl(), dùng cho Client
+// Component (VD CartItemRow.tsx - cần "use client" vì có nút +/-/xóa) - CHỈ
+// dùng với thẻ <img> THƯỜNG, KHÔNG PHẢI next/image: nếu dùng next/image ở
+// đây, route `/_next/image` vẫn luôn fetch ảnh gốc Ở PHÍA SERVER (trong
+// container frontend, xem giải thích đầy đủ ở resolveProductImageUrl()) -
+// origin tính từ NEXT_PUBLIC_API_URL (http://localhost:8000/...) chỉ trình
+// duyệt gọi được, chính container frontend gọi lại "localhost:8000" từ BÊN
+// TRONG nó sẽ KHÔNG tới được container backend (đúng lỗi ECONNREFUSED đã gặp
+// ở task 4.2.1) - vì vậy Client Component PHẢI dùng <img> tải thẳng từ trình
+// duyệt (bỏ qua tối ưu ảnh của Next.js cho trường hợp này), không thể tái sử
+// dụng nguyên next/image như ProductCard (Server Component).
+const CLIENT_API_ORIGIN = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/v1\/?$/, "") ?? "";
+
+export function resolveProductImageUrlClient(imageUrl: string | null): string | null {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) return imageUrl;
+  return `${CLIENT_API_ORIGIN}${imageUrl}`;
+}

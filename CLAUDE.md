@@ -306,6 +306,62 @@ request bị Backend từ chối 1 phần hoặc tồn kho đổi giữa chừng
 chung, tránh mỗi nơi tự gọi `useAuth()` riêng (mỗi lần gọi tốn 1 request
 `GET /auth/me` - xem thêm `docs/KNOWN_TODOS.md` #22).
 
+**`app/(customer)/cart/`, `checkout/`, `checkout/success/`** (task 4.3.2) -
+`/cart` (Client Component, đọc thẳng `useCart()`, KHÔNG tự fetch riêng) hiện
+`CartItemRow.tsx` (mỗi dòng tự quản `isPending` cục bộ, gọi
+`updateQuantity`/`removeItem` NGAY khi bấm +/-/xóa - thiết kế Stitch chỉ có
+nút bấm, không có ô nhập số tay, nên không cần debounce, chỉ cần disable nút
+lúc chờ response để tránh bấm dồn). `/checkout` (`CheckoutPage`) CHỈ lo guard
+giỏ hàng trống (redirect `/cart` nếu vào thẳng `/checkout` khi chưa có gì) +
+layout, phần form/submit thật tách ở `CheckoutForm.tsx` (react-hook-form +
+zod, cùng pattern `LoginForm`/`RegisterForm` task 1.3.4) - pre-fill từ
+`useAuth().user` (`fullName`/`phone`/`address`) qua `reset()` trong
+`useEffect` (KHÔNG dùng `defaultValues` - user thường CHƯA load xong lúc form
+mount). **KHÔNG có field `payment_method`** - hệ thống hiện chỉ hỗ trợ COD
+(`backend/app/schemas/order.py:OrderCreate` không có field này), radio
+VNPay/Momo trong UI chỉ decorative (disabled, badge "Sắp ra mắt", đúng thiết
+kế Stitch gốc). Lỗi 409 (thiếu tồn kho, `order_service.checkout()`) hiện
+THẲNG message thật từ Backend (liệt kê đúng sản phẩm thiếu) qua
+`lib/api-error.ts:extractApiErrorMessage()` (task 4.3.2, đọc `body.message`
+từ envelope lỗi chung). Sau khi đặt thành công: gọi TƯỜNG MINH
+`clearCart()` (`CartContext` KHÔNG tự biết `POST /orders` đã xóa
+`cart_items` phía Backend - không có cơ chế tự re-fetch sau 1 request không
+liên quan `/cart`) rồi `router.push("/checkout/success?order_id=<id>")`.
+
+**Route trang xác nhận là `/checkout/success?order_id=<id>`, KHÔNG PHẢI
+`/orders/[id]/confirmation`** (quyết định có chủ đích) - đây là bước CUỐI
+nhất thời của luồng checkout, không phải thuộc tính bền vững của resource đơn
+hàng; đặt dưới `/orders/[id]/...` sẽ khiến trang trông như "vừa đặt hàng xong"
+mỗi lần bookmark/quay lại xem dù đơn có thể đã giao từ lâu - giữ `/orders/[id]`
+trống cho trang chi tiết đơn hàng thật (chưa làm) sau này. `OrderConfirmation.tsx`
+(bọc `<Suspense>` vì dùng `useSearchParams()`, cùng lý do `LoginForm`) fetch
+LẠI `GET /orders/{id}` (không tin dữ liệu response `POST /orders` truyền qua
+điều hướng - không truyền được qua URL, và fetch lại giúp trang chịu được
+refresh/mở lại link sau đó). **KHÔNG hiển thị "Dự kiến giao hàng"** dù thiết
+kế Stitch có dòng này - Backend không có field ước tính ngày giao, đó là dữ
+liệu bịa của Stitch, không hiện ngày giả.
+
+**`orders.shipping_name`** (task 4.3.2, thêm SAU `orders.shipping_address`/
+`shipping_phone` đã có từ task 3.1.3) - phát sinh từ gap phát hiện lúc port
+Stitch: form checkout có ô "Họ và tên" người nhận nhưng Backend ban đầu không
+có cột nào lưu. Snapshot lúc đặt, CÙNG NGUYÊN TẮC `shipping_address`/
+`shipping_phone` (KHÔNG tham chiếu `users.full_name` - người nhận có thể khác
+chủ tài khoản, VD đặt hộ/tặng). Migration `f00f506b3a6b` (`add_column`/
+`drop_column` đơn giản, không đụng FK/index nên không gặp vấn đề như
+`docs/KNOWN_TODOS.md` #11).
+
+**Client Component KHÔNG dùng `next/image` để hiển thị ảnh sản phẩm** (VD
+`CartItemRow.tsx`, order summary trong `CheckoutForm.tsx`) - dùng `<img>`
+thường + `lib/format.ts:resolveProductImageUrlClient()` (origin từ
+`NEXT_PUBLIC_API_URL`, KHÁC `resolveProductImageUrl()` gốc dùng
+`API_INTERNAL_URL` cho Server Component). Lý do: `/_next/image` LUÔN fetch
+ảnh gốc Ở PHÍA SERVER bất kể trang là SSR hay CSR (đã note từ task 4.2.1) -
+nếu Client Component dùng `next/image` với origin tính từ `API_INTERNAL_URL`
+(server-only, `undefined` ở trình duyệt) sẽ ra ảnh vỡ; muốn dùng `next/image`
+đúng cách ở Client Component vẫn phải trỏ `API_INTERNAL_URL`, nhưng biến đó
+không đọc được ở client-side code - đơn giản nhất là bỏ tối ưu ảnh Next.js
+cho riêng trường hợp này, tải thẳng qua trình duyệt bằng `NEXT_PUBLIC_API_URL`.
+
 **Luồng dữ liệu chính**:
 - **MySQL** (qua SQLAlchemy): dữ liệu quan hệ — User, Product, Category, Cart, Order.
 - **MongoDB** (qua PyMongo): dữ liệu phi cấu trúc — Chat log (AI Agent), Review.

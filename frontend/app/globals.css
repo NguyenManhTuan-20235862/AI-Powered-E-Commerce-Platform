@@ -30,6 +30,12 @@
   --color-neutral-600: #82796a;
   --color-neutral-700: #645c50;
   --color-divider: color-mix(in srgb, #201e1d 16%, transparent);
+  /* task 4.3.2 - chưa có token lỗi/danger nào trước đó (chưa form nào cần
+     validate lỗi ngoài (auth)/auth.css riêng biệt) - thêm mới, dùng đỏ
+     Material chuẩn (không thuộc bảng "đất/rêu" của thương hiệu, đúng thông lệ
+     UX: màu lỗi tách khỏi palette thương hiệu để luôn nổi bật, dễ nhận biết). */
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
   --font-heading: var(--font-caprasimo), serif;
   --font-body: var(--font-figtree), sans-serif;
   --radius-md: 16px;

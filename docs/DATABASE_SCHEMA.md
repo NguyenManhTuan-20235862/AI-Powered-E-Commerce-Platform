@@ -126,6 +126,7 @@ trạng thái tạm thời, không phải dữ liệu lịch sử cần giữ l�
 | `user_id` | `BIGINT` | NOT NULL, FK → `users.id`, INDEX | Người đặt hàng |
 | `status` | `ENUM('pending','confirmed','shipping','delivered','cancelled')` | NOT NULL, DEFAULT `'pending'`, INDEX | Trạng thái đơn hàng |
 | `total_amount` | `DECIMAL(12,2)` | NOT NULL | Tổng tiền đơn hàng |
+| `shipping_name` | `VARCHAR(150)` | NOT NULL | Tên người nhận (snapshot lúc đặt, task 4.3.2 — không tham chiếu `users.full_name`: người nhận có thể khác chủ tài khoản, VD đặt hộ/tặng) |
 | `shipping_address` | `VARCHAR(500)` | NOT NULL | Địa chỉ giao hàng (snapshot lúc đặt, không tham chiếu `users.address`) |
 | `shipping_phone` | `VARCHAR(20)` | NOT NULL | SĐT nhận hàng (snapshot lúc đặt) |
 | `note` | `VARCHAR(500)` | NULLABLE | Ghi chú của khách |
