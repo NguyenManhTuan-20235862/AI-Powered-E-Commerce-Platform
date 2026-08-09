@@ -186,8 +186,11 @@ app/
 │                        Payment task 3.1.3), migrate qua Alembic (task 3.1.4)
 ├── schemas/            # Pydantic schemas, gồm common.py (envelope response chuẩn)
 └── services/            # business logic tách khỏi router — auth/product/cart/order
-                           đã có logic thật (task 1.3.2, 3.4.1, 3.4.2); category/
-                           dashboard/payment vẫn placeholder (chưa tới task tương ứng)
+                           đã có logic thật (task 1.3.2, 3.4.1, 3.4.2); category CHỈ
+                           `list_categories()` thật (task 4.2.1, phục vụ filter
+                           trang catalog) — CRUD category (POST/PUT/DELETE) vẫn
+                           placeholder; dashboard/payment vẫn placeholder (chưa
+                           tới task tương ứng)
 ```
 
 **Frontend** (`frontend/app/`) — App Router, chia theo route group:
@@ -198,8 +201,12 @@ app/
 └── admin/           # segment THẬT (không phải route group) → "/admin/*"
                        # (tránh trùng URL với (customer)/products)
 ```
-`lib/axios.ts` (interceptor gắn JWT), `lib/auth.ts` (đọc/ghi token localStorage),
-`hooks/useAuth.ts`, `types/` (User/Product/Order/Cart).
+`lib/axios.ts` (interceptor gắn JWT, dùng phía CLIENT), `lib/api-server.ts`
+(fetch phía SERVER, task 4.2.1 - xem giải thích `API_INTERNAL_URL` bên dưới),
+`lib/auth.ts` (đọc/ghi token localStorage), `hooks/useAuth.ts`, `types/`
+(`common.ts` - envelope `ApiResponse`/`PaginatedResponse` dùng chung; User/
+Product/Category khớp schema Backend thật; Cart/Order vẫn placeholder cũ, xem
+`docs/KNOWN_TODOS.md` #20).
 
 **Design token** (task 4.1.1, xem `docs/DESIGN_TOKENS.md`) — màu/font/radius/
 shadow khai báo 1 lần dạng CSS custom property ở `app/globals.css` (`:root`),
@@ -220,6 +227,22 @@ Docker lẫn `host.docker.internal` (hostname đó chỉ có nghĩa bên trong n
 namespace của Docker). Khác với các biến phía Backend (server-side, chỉ chạy
 trong container) - những biến đó mới dùng được tên service/`host.docker.internal`.
 Xem thêm task 2.2.1.
+
+**`API_INTERNAL_URL` (task 4.2.1) — NGƯỢC LẠI với `NEXT_PUBLIC_API_URL`**, dùng
+cho fetch phía SERVER (Server Component SSR, `lib/api-server.ts:fetchApi()`,
+VD `app/(customer)/products/page.tsx`) VÀ cho origin ảnh `next/image` tối ưu
+(`lib/format.ts:resolveProductImageUrl()`, `next.config.ts`) — cả 2 đều chạy
+TRONG container/process Next.js (kể cả khi trang là SSR hay khi `next/image`
+tối ưu ảnh cho 1 trang CSR, route `/_next/image` LUÔN tự fetch ảnh gốc ở
+server), nên PHẢI dùng tên service Docker (`http://backend:8000/api/v1`) qua
+compose, KHÁC hẳn `NEXT_PUBLIC_API_URL`. Nhầm 2 biến này cho nhau (dùng
+`NEXT_PUBLIC_API_URL` ở Server Component, hoặc `API_INTERNAL_URL` ở Client
+Component) sẽ lỗi kết nối - đã tự gặp cả 2 chiều lúc verify task 4.2.1.
+
+`components/product/` (task 4.2.1): `ProductCard`/`ProductGrid` (Server
+Component, hiển thị thuần), `ProductFilters`/`SortDropdown` (Client Component,
+đổi URL `searchParams` - filter/sort/trang đều nằm trên URL, không phải state
+component, để share link/back-forward hoạt động đúng).
 
 **Luồng dữ liệu chính**:
 - **MySQL** (qua SQLAlchemy): dữ liệu quan hệ — User, Product, Category, Cart, Order.

@@ -54,6 +54,7 @@ sửa lỗi liên quan). CHỈ file `.env*.example` được phép commit.
 | Biến | Dùng ở đâu | Mô tả |
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | `lib/axios.ts` (`baseURL`) | URL gốc gọi Backend API - PHẢI là URL trình duyệt gọi được (KHÔNG PHẢI tên service Docker/`host.docker.internal`, xem `CLAUDE.md`). **PHẢI đổi sang domain thật khi deploy** - lưu ý với `Dockerfile.prod` phải truyền qua `--build-arg` lúc `docker build`, đọc file `.env` lúc `docker run` KHÔNG có tác dụng (xem `docs/KNOWN_TODOS.md` #5). |
+| `API_INTERNAL_URL` | Server Component SSR (task 4.2.1, VD `app/(customer)/products/page.tsx`) | URL gốc gọi Backend API dùng ở SERVER (KHÁC `NEXT_PUBLIC_API_URL` - biến này KHÔNG có prefix `NEXT_PUBLIC_`, không nhúng vào bundle JS trình duyệt, chỉ process Next.js đọc lúc xử lý request) - dev qua `docker-compose.yml` trỏ tên service `http://backend:8000/api/v1`, standalone (`npm run dev` ngoài Docker) dùng `http://localhost:8000/api/v1` giống `NEXT_PUBLIC_API_URL`. Đọc runtime (`process.env`) bình thường, **KHÔNG cần build-arg** kể cả ở `Dockerfile.prod` (khác `NEXT_PUBLIC_API_URL`) - đổi được qua `docker run -e`/env runtime lúc deploy. |
 
 ---
 
