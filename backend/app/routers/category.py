@@ -6,12 +6,15 @@ Khung endpoint theo docs/API_SPEC.md - mục 3.1.
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
+from app.core.database import get_db
 from app.core.openapi_responses import auth_responses
 from app.core.security import require_role
 from app.models.user import User, UserRole
 from app.schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
-from app.schemas.common import APIResponse, MessageResponse
+from app.schemas.common import APIResponse, MessageResponse, success_response
+from app.services import category_service
 
 router = APIRouter(prefix="/categories", tags=["Category"])
 
@@ -21,9 +24,9 @@ router = APIRouter(prefix="/categories", tags=["Category"])
     response_model=APIResponse[list[CategoryRead]],
     summary="Danh sách danh mục sản phẩm",
 )
-def list_categories() -> APIResponse[list[CategoryRead]]:
-    """Danh sách danh mục sản phẩm. Public."""
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")
+def list_categories(db: Annotated[Session, Depends(get_db)]) -> APIResponse[list[CategoryRead]]:
+    """Danh sách danh mục sản phẩm (task 4.2.1). Public."""
+    return success_response(data=category_service.list_categories(db))
 
 
 @router.post(

@@ -320,6 +320,77 @@ def test_list_products_search_by_name(client: TestClient, db: Session) -> None:
     assert {item["id"] for item in items} == {match["id"]}
 
 
+def test_list_products_filter_in_stock(client: TestClient, db: Session) -> None:
+    category = _create_category(db)
+    headers = _admin_headers(db)
+    in_stock = _create_product(client, headers, category.id, name="Còn hàng", stock_quantity=5)
+    _create_product(client, headers, category.id, name="Hết hàng", stock_quantity=0)
+
+    response = client.get("/api/v1/products", params={"in_stock": True})
+    items = response.json()["data"]["items"]
+    assert {item["id"] for item in items} == {in_stock["id"]}
+
+
+def test_list_products_in_stock_false_does_not_filter(client: TestClient, db: Session) -> None:
+    category = _create_category(db)
+    headers = _admin_headers(db)
+    a = _create_product(client, headers, category.id, name="Còn hàng", stock_quantity=5)
+    b = _create_product(client, headers, category.id, name="Hết hàng", stock_quantity=0)
+
+    response = client.get("/api/v1/products", params={"in_stock": False})
+    items = response.json()["data"]["items"]
+    assert {item["id"] for item in items} == {a["id"], b["id"]}
+
+
+def test_list_products_sort_by_price_asc(client: TestClient, db: Session) -> None:
+    category = _create_category(db)
+    headers = _admin_headers(db)
+    expensive = _create_product(client, headers, category.id, name="Đắt", price="900000")
+    cheap = _create_product(client, headers, category.id, name="Rẻ", price="10000")
+
+    response = client.get("/api/v1/products", params={"sort_by": "price_asc"})
+    ids = [item["id"] for item in response.json()["data"]["items"]]
+    assert ids.index(cheap["id"]) < ids.index(expensive["id"])
+
+
+def test_list_products_sort_by_price_desc(client: TestClient, db: Session) -> None:
+    category = _create_category(db)
+    headers = _admin_headers(db)
+    expensive = _create_product(client, headers, category.id, name="Đắt", price="900000")
+    cheap = _create_product(client, headers, category.id, name="Rẻ", price="10000")
+
+    response = client.get("/api/v1/products", params={"sort_by": "price_desc"})
+    ids = [item["id"] for item in response.json()["data"]["items"]]
+    assert ids.index(expensive["id"]) < ids.index(cheap["id"])
+
+
+def test_list_products_default_sort_is_newest_first(client: TestClient, db: Session) -> None:
+    category = _create_category(db)
+    headers = _admin_headers(db)
+    older = _create_product(client, headers, category.id, name="Cũ")
+    newer = _create_product(client, headers, category.id, name="Mới")
+
+    response = client.get("/api/v1/products")
+    ids = [item["id"] for item in response.json()["data"]["items"]]
+    assert ids.index(newer["id"]) < ids.index(older["id"])
+
+
+def test_list_products_different_sort_not_mixed_up_by_cache(client: TestClient, db: Session) -> None:
+    """Guard cho bug cache-key (nếu quên đưa sort_by vào
+    build_product_list_cache_key) - gọi price_asc rồi price_desc trên CÙNG
+    filter/trang phải trả 2 thứ tự KHÁC nhau, không phải cùng 1 cache entry."""
+    category = _create_category(db)
+    headers = _admin_headers(db)
+    expensive = _create_product(client, headers, category.id, name="Đắt", price="900000")
+    cheap = _create_product(client, headers, category.id, name="Rẻ", price="10000")
+
+    asc = client.get("/api/v1/products", params={"sort_by": "price_asc"}).json()["data"]["items"]
+    desc = client.get("/api/v1/products", params={"sort_by": "price_desc"}).json()["data"]["items"]
+    assert [item["id"] for item in asc] != [item["id"] for item in desc]
+    assert [item["id"] for item in asc] == [cheap["id"], expensive["id"]]
+    assert [item["id"] for item in desc] == [expensive["id"], cheap["id"]]
+
+
 def test_list_products_cache_hit_returns_same_data_and_skips_new_writes(
     client: TestClient, db: Session
 ) -> None:

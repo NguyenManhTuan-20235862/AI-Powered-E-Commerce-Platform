@@ -291,6 +291,12 @@ services:
       # lại nguyên văn ghi chú đã có trong CLAUDE.md, không đổi dù giờ đã ở
       # trong compose.
       NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+      # API_INTERNAL_URL (task 4.2.1) - NGƯỢC LẠI với NEXT_PUBLIC_API_URL ở
+      # trên: đây là URL Server Component (SSR, chạy TRONG container này,
+      # KHÔNG PHẢI trình duyệt) dùng để gọi Backend - PHẢI là tên service
+      # `backend` (network nội bộ Compose), "localhost:8000" từ container
+      # frontend sẽ không tới được container backend (2 container khác nhau).
+      API_INTERNAL_URL: http://backend:8000/api/v1
     depends_on:
       backend:
         condition: service_healthy

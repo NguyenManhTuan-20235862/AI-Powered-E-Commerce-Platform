@@ -41,13 +41,17 @@ def list_products(
     min_price: Decimal | None = None,
     max_price: Decimal | None = None,
     search: str | None = None,
+    sort_by: product_service.ProductSortBy | None = None,
+    in_stock: bool | None = None,
 ) -> APIResponse[PaginatedResponse[ProductRead]]:
-    """Danh sách sản phẩm (phân trang, filter category/giá, search theo tên).
-    Public - CHỈ trả sản phẩm `is_active=True`.
+    """Danh sách sản phẩm (phân trang, filter category/giá/tồn kho, search
+    theo tên, sắp xếp theo `sort_by` - task 4.2.1: "newest" mặc định/không
+    truyền, "price_asc", "price_desc"). Public - CHỈ trả sản phẩm
+    `is_active=True`.
 
     Cache qua Redis (`get_or_set_cache`, task 3.3.1) - key theo ĐÚNG combo
-    filter/trang hiện tại (`build_product_list_cache_key`), KHÔNG phải 1 key
-    tĩnh, vì mỗi combo filter/trang là 1 tập dữ liệu khác nhau. Bị invalidate
+    filter/trang/sắp-xếp hiện tại (`build_product_list_cache_key`), KHÔNG
+    phải 1 key tĩnh, vì mỗi combo là 1 tập dữ liệu khác nhau. Bị invalidate
     chủ động (`invalidate_by_prefix`) ngay khi Admin CRUD - xem
     `PRODUCT_LIST_CACHE_PREFIX`/`app/services/product_service.py`.
     """
@@ -58,6 +62,8 @@ def list_products(
         min_price=min_price,
         max_price=max_price,
         search=search,
+        sort_by=sort_by,
+        in_stock=in_stock,
     )
     result = get_or_set_cache(
         redis_client,
@@ -70,6 +76,8 @@ def list_products(
             min_price=min_price,
             max_price=max_price,
             search=search,
+            sort_by=sort_by,
+            in_stock=in_stock,
         ),
         ttl_seconds=product_service.PRODUCT_LIST_CACHE_TTL_SECONDS,
         adapter=TypeAdapter(PaginatedResponse[ProductRead]),

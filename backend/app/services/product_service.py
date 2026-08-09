@@ -10,6 +10,7 @@ tác DB, không tự raise HTTP error.
 import re
 import unicodedata
 from decimal import Decimal
+from typing import Literal
 
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,11 @@ from app.schemas.common import PaginatedResponse, paginated_response
 from app.schemas.product import CategorySummary, ProductCreate, ProductRead, ProductUpdate
 
 RELATED_PRODUCTS_LIMIT = 8
+
+# Task 4.2.1 - tham số `sort_by` cho GET /products (trước đó chỉ sắp cứng
+# theo id giảm dần). "newest" giữ NGUYÊN hành vi mặc định cũ (id DESC - đủ
+# dùng làm proxy "mới nhất" vì id tự tăng, không cần thêm cột riêng).
+ProductSortBy = Literal["newest", "price_asc", "price_desc"]
 
 # 5 phút - cân bằng giữa "dữ liệu đủ mới" và "giảm tải MySQL thật sự đáng
 # kể" (xem phân tích đầy đủ ở tests/test_cache.py, task 3.3.1 -
@@ -77,9 +83,14 @@ def build_product_list_cache_key(
     min_price: Decimal | None,
     max_price: Decimal | None,
     search: str | None,
+    sort_by: ProductSortBy | None = None,
+    in_stock: bool | None = None,
 ) -> str:
-    """Cache key cho ĐÚNG 1 combo filter/trang cụ thể (KHÔNG phải 1 key
-    tĩnh) - mỗi combo là 1 tập dữ liệu khác nhau, cần cache riêng."""
+    """Cache key cho ĐÚNG 1 combo filter/trang/sắp-xếp cụ thể (KHÔNG phải 1
+    key tĩnh) - mỗi combo là 1 tập dữ liệu khác nhau, cần cache riêng. PHẢI
+    có `sort_by`/`in_stock` trong key (task 4.2.1) - thiếu sẽ khiến 2 lượt
+    gọi cùng filter/trang nhưng khác sắp xếp/tồn kho lại trùng 1 cache entry,
+    trả nhầm dữ liệu đã cache từ lượt gọi trước."""
     parts = [
         f"page:{page}",
         f"page_size:{page_size}",
@@ -87,6 +98,8 @@ def build_product_list_cache_key(
         f"min_price:{min_price if min_price is not None else '-'}",
         f"max_price:{max_price if max_price is not None else '-'}",
         f"search:{search or '-'}",
+        f"sort:{sort_by or 'newest'}",
+        f"in_stock:{in_stock if in_stock is not None else '-'}",
     ]
     return PRODUCT_LIST_CACHE_PREFIX + ":".join(parts)
 
@@ -122,6 +135,14 @@ def get_product_by_id(db: Session, product_id: int) -> Product | None:
     return db.get(Product, product_id)
 
 
+_SORT_ORDER_BY = {
+    "price_asc": Product.price.asc(),
+    "price_desc": Product.price.desc(),
+    # "newest" VÀ giá trị None (không truyền sort_by) đều rơi vào default ở
+    # dưới (Product.id.desc()) - không cần khai riêng key "newest" ở đây.
+}
+
+
 def list_products(
     db: Session,
     *,
@@ -131,12 +152,18 @@ def list_products(
     min_price: Decimal | None,
     max_price: Decimal | None,
     search: str | None,
+    sort_by: ProductSortBy | None = None,
+    in_stock: bool | None = None,
 ) -> PaginatedResponse[ProductRead]:
     """Danh sách sản phẩm CÔNG KHAI - CHỈ `is_active=True` (ẩn sản phẩm đã
     xóa mềm). JOIN thẳng `categories` (KHÔNG dùng SQLAlchemy `relationship()`
     - model `Product` cố tình không khai báo quan hệ ORM, xem
     `app/models/product.py`) để lấy `category.name` trong CÙNG 1 query,
     tránh N+1 (1 query duy nhất cho cả trang, không phải 1 query/sản phẩm).
+
+    `in_stock` (task 4.2.1): CHỈ lọc khi `True` (bật toggle "Còn hàng") -
+    `None`/`False` đều nghĩa là "không lọc theo tồn kho", KHÔNG PHẢI "chỉ
+    hiện hết hàng" - khớp ngữ nghĩa toggle 1 chiều của Stitch design.
     """
     query = (
         db.query(Product, Category.name)
@@ -151,9 +178,12 @@ def list_products(
         query = query.filter(Product.price <= max_price)
     if search:
         query = query.filter(Product.name.ilike(f"%{search}%"))
+    if in_stock:
+        query = query.filter(Product.stock_quantity > 0)
 
     total = query.count()
-    rows = query.order_by(Product.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    order = _SORT_ORDER_BY.get(sort_by or "newest", Product.id.desc())
+    rows = query.order_by(order).offset((page - 1) * page_size).limit(page_size).all()
     items = [to_product_read(product, category_name) for product, category_name in rows]
     return paginated_response(items, total, page, page_size)
 
