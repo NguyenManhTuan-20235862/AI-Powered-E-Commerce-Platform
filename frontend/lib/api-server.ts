@@ -6,6 +6,20 @@ import type { ApiResponse } from "@/types/common";
 // docs/ENV_VARIABLES.md).
 const API_INTERNAL_URL = process.env.API_INTERNAL_URL;
 
+// task 4.2.2 - trang chi tiết sản phẩm cần phân biệt 404 (gọi notFound() của
+// Next.js) với các lỗi khác (network/500 - hiện chỉ generic error) - Error
+// thường không mang theo status code, nên tạo subclass riêng thay vì string
+// match message (dễ vỡ nếu message đổi).
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 /**
  * Gọi Backend API từ Server Component. `cache: "no-store"` - trang catalog
  * dynamic theo searchParams (filter/sort/trang), tự Redis phía Backend đã lo
@@ -17,7 +31,7 @@ export async function fetchApi<T>(path: string, searchParams?: URLSearchParams):
   const url = `${API_INTERNAL_URL}${path}${query ? `?${query}` : ""}`;
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) {
-    throw new Error(`Gọi API thất bại: ${path} (status ${res.status})`);
+    throw new ApiError(res.status, `Gọi API thất bại: ${path} (status ${res.status})`);
   }
   const body: ApiResponse<T> = await res.json();
   return body.data;

@@ -151,8 +151,24 @@ def test_get_product_detail(client: TestClient, db: Session) -> None:
     assert response.json()["data"]["id"] == created["id"]
 
 
+def test_get_product_detail_by_slug(client: TestClient, db: Session) -> None:
+    """Task 4.2.2 - trang chi tiết Frontend link theo slug, không phải id."""
+    category = _create_category(db)
+    headers = _admin_headers(db)
+    created = _create_product(client, headers, category.id, name="Bình Gốm Mộc")
+
+    response = client.get(f"/api/v1/products/{created['slug']}")
+    assert response.status_code == 200
+    assert response.json()["data"]["id"] == created["id"]
+
+
 def test_get_product_detail_not_found_returns_404(client: TestClient) -> None:
     response = client.get("/api/v1/products/999999")
+    assert response.status_code == 404
+
+
+def test_get_product_detail_unknown_slug_returns_404(client: TestClient) -> None:
+    response = client.get("/api/v1/products/khong-ton-tai")
     assert response.status_code == 404
 
 
@@ -458,6 +474,18 @@ def test_related_products_same_category_excludes_self(client: TestClient, db: Se
     _create_product(client, headers, category_b.id, name="Khác danh mục")
 
     response = client.get(f"/api/v1/products/{anchor['id']}/related")
+    assert response.status_code == 200
+    ids = [item["id"] for item in response.json()["data"]]
+    assert ids == [sibling["id"]]
+
+
+def test_related_products_by_slug(client: TestClient, db: Session) -> None:
+    category = _create_category(db)
+    headers = _admin_headers(db)
+    anchor = _create_product(client, headers, category.id, name="Gốc Slug")
+    sibling = _create_product(client, headers, category.id, name="Cùng danh mục 2")
+
+    response = client.get(f"/api/v1/products/{anchor['slug']}/related")
     assert response.status_code == 200
     ids = [item["id"] for item in response.json()["data"]]
     assert ids == [sibling["id"]]

@@ -86,29 +86,33 @@ def list_products(
 
 
 @router.get(
-    "/{product_id}",
+    "/{id_or_slug}",
     response_model=APIResponse[ProductRead],
     summary="Chi tiết 1 sản phẩm",
     responses={404: {"description": "Không tìm thấy sản phẩm"}},
 )
-def get_product(product_id: int, db: Annotated[Session, Depends(get_db)]) -> APIResponse[ProductRead]:
-    """Chi tiết 1 sản phẩm. Public - CHỈ trả sản phẩm `is_active=True`."""
-    product_read = product_service.get_active_product_read(db, product_id)
+def get_product(id_or_slug: str, db: Annotated[Session, Depends(get_db)]) -> APIResponse[ProductRead]:
+    """Chi tiết 1 sản phẩm - nhận `id` (số) HOẶC `slug` (task 4.2.2, khớp URL
+    trang chi tiết Frontend link theo slug - xem
+    `product_service._id_or_slug_filter()`). Public - CHỈ trả sản phẩm
+    `is_active=True`."""
+    product_read = product_service.get_active_product_read(db, id_or_slug)
     if product_read is None:
         raise _not_found()
     return success_response(data=product_read)
 
 
 @router.get(
-    "/{product_id}/related",
+    "/{id_or_slug}/related",
     response_model=APIResponse[list[ProductRead]],
     summary="Sản phẩm liên quan / tương tự",
     responses={404: {"description": "Không tìm thấy sản phẩm"}},
 )
-def get_related_products(product_id: int, db: Annotated[Session, Depends(get_db)]) -> APIResponse[list[ProductRead]]:
-    """Sản phẩm liên quan / tương tự (cùng category, loại trừ chính nó, tối
+def get_related_products(id_or_slug: str, db: Annotated[Session, Depends(get_db)]) -> APIResponse[list[ProductRead]]:
+    """Sản phẩm liên quan / tương tự - nhận `id` HOẶC `slug` (task 4.2.2, xem
+    `get_product` ở trên). Cùng category, loại trừ chính nó, tối
     đa `product_service.RELATED_PRODUCTS_LIMIT` sản phẩm). Public."""
-    related = product_service.list_related_products(db, product_id)
+    related = product_service.list_related_products(db, id_or_slug)
     if related is None:
         raise _not_found()
     return success_response(data=related)

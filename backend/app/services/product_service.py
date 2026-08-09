@@ -188,7 +188,19 @@ def list_products(
     return paginated_response(items, total, page, page_size)
 
 
-def get_active_product_read(db: Session, product_id: int) -> ProductRead | None:
+def _id_or_slug_filter(id_or_slug: str):
+    """Task 4.2.2 - trang chi tiết sản phẩm (Frontend) link theo `slug`
+    (SEO-friendly URL, `/products/binh-gom-thu-cong`), không phải `id` số -
+    `GET /products/{id_or_slug}` và `/related` PHẢI nhận được cả 2 dạng.
+    Parse số TRƯỚC (ưu tiên id) - giới hạn đã biết: 1 slug TOÀN CHỮ SỐ (rất
+    khó xảy ra - `slugify()` luôn xử lý tên tiếng Việt có chữ, xem
+    `slugify()` phía trên) sẽ bị hiểu nhầm thành id, không tra được qua
+    endpoint này - chấp nhận được cho quy mô dự án, không xử lý thêm.
+    """
+    return Product.id == int(id_or_slug) if id_or_slug.isdigit() else Product.slug == id_or_slug
+
+
+def get_active_product_read(db: Session, id_or_slug: str) -> ProductRead | None:
     """Chi tiết 1 sản phẩm CÔNG KHAI - None nếu không tồn tại HOẶC đã bị ẩn
     (`is_active=False`) - router trả 404 như nhau cho cả 2 trường hợp, không
     phân biệt "không tồn tại" với "đã ẩn" ra ngoài (tương tự nguyên tắc 1
@@ -196,7 +208,7 @@ def get_active_product_read(db: Session, product_id: int) -> ProductRead | None:
     row = (
         db.query(Product, Category.name)
         .join(Category, Product.category_id == Category.id)
-        .filter(Product.id == product_id, Product.is_active.is_(True))
+        .filter(_id_or_slug_filter(id_or_slug), Product.is_active.is_(True))
         .first()
     )
     if row is None:
@@ -205,11 +217,13 @@ def get_active_product_read(db: Session, product_id: int) -> ProductRead | None:
     return to_product_read(product, category_name)
 
 
-def list_related_products(db: Session, product_id: int) -> list[ProductRead] | None:
+def list_related_products(db: Session, id_or_slug: str) -> list[ProductRead] | None:
     """None nếu sản phẩm gốc không tồn tại/đã bị ẩn (router trả 404). Ngược
     lại, trả tối đa `RELATED_PRODUCTS_LIMIT` sản phẩm CÙNG category, loại
-    trừ chính nó, cũng CHỈ `is_active=True`."""
-    anchor = db.query(Product).filter(Product.id == product_id, Product.is_active.is_(True)).first()
+    trừ chính nó, cũng CHỈ `is_active=True`. Nhận `id_or_slug` giống
+    `get_active_product_read()` ở trên - dùng `anchor.id` (đã resolve ra số
+    thật) để loại trừ, KHÔNG dùng lại `id_or_slug` gốc (có thể là slug)."""
+    anchor = db.query(Product).filter(_id_or_slug_filter(id_or_slug), Product.is_active.is_(True)).first()
     if anchor is None:
         return None
 
@@ -218,7 +232,7 @@ def list_related_products(db: Session, product_id: int) -> list[ProductRead] | N
         .join(Category, Product.category_id == Category.id)
         .filter(
             Product.category_id == anchor.category_id,
-            Product.id != product_id,
+            Product.id != anchor.id,
             Product.is_active.is_(True),
         )
         .order_by(Product.id.desc())
