@@ -9,24 +9,56 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      // Toàn bộ giá trị bên dưới TRỎ THẲNG vào CSS custom property khai báo ở
+      // app/globals.css (nguồn sự thật duy nhất, chốt từ task 1.3.4 trang
+      // auth) - KHÔNG lặp lại giá trị hex/font ở đây, tránh 2 nơi phải sửa
+      // khi đổi theme. Xem docs/DESIGN_TOKENS.md để biết ý nghĩa/cách dùng
+      // từng token (token nào cho nền trang, token nào cho card...).
       colors: {
-        // Màu trung tính tạm thời cho thương hiệu TMĐT - tinh chỉnh sau.
-        brand: {
-          50: "#f5f7fa",
-          100: "#e9edf3",
-          200: "#cdd6e3",
-          300: "#a3b2c9",
-          400: "#7188aa",
-          500: "#4d6690",
-          600: "#3a5075",
-          700: "#2f405f",
-          800: "#293650",
-          900: "#252e44",
+        background: "var(--color-bg)",
+        surface: "var(--color-surface)",
+        border: "color-mix(in srgb, var(--color-text) 16%, transparent)",
+        foreground: {
+          DEFAULT: "var(--color-text)",
+          secondary: "var(--color-neutral-700)",
+          muted: "var(--color-neutral-600)",
+        },
+        primary: {
+          DEFAULT: "var(--color-accent)",
+          hover: "var(--color-accent-600)",
+          100: "var(--color-accent-100)",
+          300: "var(--color-accent-300)",
+          700: "var(--color-accent-700)",
+          800: "var(--color-accent-800)",
+        },
+        secondary: {
+          DEFAULT: "var(--color-accent-2)",
+          100: "var(--color-accent-2-100)",
+          300: "var(--color-accent-2-300)",
+          800: "var(--color-accent-2-800)",
+          900: "var(--color-accent-2-900)",
         },
       },
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "sans-serif"],
-        mono: ["var(--font-geist-mono)", "monospace"],
+        // sans = mặc định site (body text) - trỏ luôn về Figtree, để những
+        // chỗ chưa gắn class font cụ thể vẫn ra đúng font thay vì fallback
+        // hệ thống. heading/body đặt tên tường minh để dùng rõ ý ở nơi cần
+        // phân biệt (VD .auth-heading dùng heading, input/paragraph dùng body).
+        sans: ["var(--font-body)"],
+        heading: ["var(--font-heading)"],
+        body: ["var(--font-body)"],
+      },
+      borderRadius: {
+        // radius-md (16px) đã trùng khớp giá trị mặc định "2xl" của Tailwind
+        // (1rem) nên KHÔNG cần khai báo thêm - dùng thẳng rounded-2xl. Chỉ
+        // thêm radius-lg (28px, dùng cho auth-image/card lớn) vì Tailwind
+        // mặc định không có giá trị nào khớp.
+        "4xl": "28px",
+      },
+      boxShadow: {
+        // Tương đương --shadow-lg (auth.css) - màu bóng đổ ấm (nâu tối) thay
+        // vì đen thuần mặc định của Tailwind, khớp tông "warm & tin cậy".
+        warm: "0 12px 32px rgba(46, 43, 37, 0.22)",
       },
     },
   },

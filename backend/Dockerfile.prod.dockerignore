@@ -1,0 +1,48 @@
+# .dockerignore RIÊNG cho Dockerfile.prod (BuildKit tự ưu tiên file
+# "<tên-Dockerfile>.dockerignore" này thay vì .dockerignore chung khi build
+# đúng -f Dockerfile.prod). Khác .dockerignore chung (dùng cho Dockerfile.dev)
+# ở đúng 1 điểm: LOẠI TRỪ tests/ - image production không cần chạy pytest bên
+# trong container, khác dev image (nơi tests/ được giữ lại để có thể
+# `docker exec <container> pytest` khi cần, xem .dockerignore chung).
+#
+# Lưu ý: KHÔNG cần liệt kê docs/ - build context là thư mục backend/, còn
+# docs/ nằm ở gốc repo (ngoài backend/) nên vốn dĩ không bao giờ lọt vào build
+# context của Dockerfile này, loại trừ sẽ là dòng thừa không có tác dụng gì.
+
+tests/
+
+# Môi trường ảo / cache Python - không cần trong image, cài lại sạch bằng pip.
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Secret thật - CHỈ .env.example được phép vào image (production đọc biến môi
+# trường thật qua orchestrator/--env-file lúc `docker run`, KHÔNG bake vào image).
+.env
+.env.*
+!.env.example
+
+# Log runtime - sinh ra lúc chạy (và production log ra stdout/stderr, không
+# ghi file - xem gunicorn_conf.py), không phải lúc build.
+logs/
+*.log
+
+# Git
+.git/
+.gitignore
+
+# Docker - không cần Dockerfile/context của chính nó trong image.
+Dockerfile*
+.dockerignore
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

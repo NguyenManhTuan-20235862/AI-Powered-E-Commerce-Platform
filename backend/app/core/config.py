@@ -4,6 +4,14 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Hằng số (KHÔNG đọc từ .env - không phải giá trị cấu hình theo môi trường,
+# đổi giá trị này là breaking change API) - đặt ở đây (không phải trong
+# app/main.py, nơi dùng chính) vì app/core/storage.py (task 3.4.1, URL public
+# phục vụ ảnh upload) CŨNG cần đúng giá trị này để khớp `location /api/` bên
+# nginx.conf sau này - main.py IMPORT lại từ đây thay vì tự định nghĩa,
+# tránh 2 nơi hardcode "/api/v1" độc lập dễ lệch nhau nếu 1 trong 2 đổi.
+API_PREFIX = "/api/v1"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -27,9 +35,17 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # AI Agent (LangChain)
     OPENAI_API_KEY: str | None = None
+
+    # Scheduler (task 3.5.2) - lịch chạy job đồng bộ Product -> MongoDB
+    # (backend/scripts/run_scheduler.py), cú pháp cron chuẩn (phút giờ ngày
+    # tháng thứ), giờ Việt Nam (Asia/Ho_Chi_Minh). Mặc định 2h sáng hàng
+    # ngày - giờ ít traffic nhất. Đọc qua biến môi trường để TEST được lịch
+    # chạy gần (VD "*/2 * * * *" - mỗi 2 phút) mà KHÔNG cần sửa code.
+    PRODUCT_SYNC_CRON: str = "0 2 * * *"
 
     @property
     def is_production(self) -> bool:

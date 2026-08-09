@@ -1,0 +1,36 @@
+# Môi trường ảo / cache Python - không cần trong image, cài lại sạch bằng pip.
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Secret thật - CHỈ .env.example được phép vào image (làm tài liệu tham khảo
+# nếu cần), .env thật tuyệt đối không được build vào image (image có thể bị
+# push lên registry, lộ secret vĩnh viễn trong layer history).
+.env
+.env.*
+!.env.example
+
+# Log runtime - sinh ra lúc chạy, không phải lúc build.
+logs/
+*.log
+
+# Git - không cần trong image, và build context thường là backend/ (không có
+# .git ở đây) nên dòng này chủ yếu phòng khi ai đó đổi context sang repo root.
+.git/
+.gitignore
+
+# Docker - không cần Dockerfile/context của chính nó trong image.
+Dockerfile*
+.dockerignore
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

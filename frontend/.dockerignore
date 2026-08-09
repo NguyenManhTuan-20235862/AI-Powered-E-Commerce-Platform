@@ -1,0 +1,51 @@
+# Dependency đã cài - cài lại sạch bằng npm ci trong image, không copy từ host
+# (khác OS/arch với container - xem giải thích named volume ở lệnh docker run).
+node_modules/
+
+# Build output Next.js - sinh ra lúc build/dev, không phải lúc copy code vào image.
+.next/
+out/
+build/
+
+# Secret thật - CHỈ .env.example được phép vào image (làm tài liệu tham khảo
+# nếu cần), .env thật tuyệt đối không được build vào image (image có thể bị
+# push lên registry, lộ NEXT_PUBLIC_* cũ hoặc secret khác vĩnh viễn trong layer
+# history).
+.env
+.env.*
+!.env.example
+
+# Git - build context là frontend/ (không có .git ở đây) nên dòng này chủ yếu
+# phòng khi ai đó đổi context sang repo root.
+.git/
+.gitignore
+
+# Docker - không cần Dockerfile/context của chính nó trong image.
+Dockerfile*
+.dockerignore
+
+# Cache/artifact cục bộ - sinh lại được, không cần trong image.
+*.tsbuildinfo
+coverage/
+npm-debug.log*
+
+# Test file (task 2.2.2) - hiện CHƯA có thư mục test nào trong frontend/
+# (package.json chưa có script "test", chưa dùng Vitest/Jest/Playwright) nên
+# 2 dòng dưới hiện không loại trừ gì cả - thêm sẵn để phòng khi có test thật.
+# KHÔNG tách riêng .dockerignore cho Dockerfile.prod như Backend (task 2.1.2):
+# Backend tách vì Dockerfile.dev THẬT SỰ cần tests/ trong image (chạy
+# `docker exec <container> pytest`), còn Frontend không có quy trình "chạy
+# test bên trong container" ở cả dev lẫn prod - 1 file .dockerignore dùng
+# chung cho cả Dockerfile.dev và Dockerfile.prod là đủ, tách ra sẽ là 2 file
+# giống hệt nhau không có lý do phân kỳ.
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+**/__tests__/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

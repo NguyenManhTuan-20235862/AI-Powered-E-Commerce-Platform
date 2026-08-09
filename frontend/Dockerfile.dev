@@ -1,0 +1,68 @@
+# Dockerfile.dev — môi trường DEV cho Frontend (task 2.2.1).
+# CHỈ dùng để chạy local với hot-reload. Chưa tối ưu size/security cho
+# production (multi-stage, non-root user, `next build` + `next start`...) -
+# việc đó thuộc task 2.2.2.
+
+# node:20-slim (Debian, glibc) thay vì node:20-alpine.
+#
+# Lý do KHÔNG hoàn toàn giống Backend (task 2.1.1 chọn slim vì tránh compile
+# C-extension như bcrypt/pydantic-core): package.json hiện tại (next, react,
+# axios, react-hook-form, zod, tailwindcss...) KHÔNG có package nào cần native
+# binding qua node-gyp - đã kiểm tra, không có devDependency kiểu
+# better-sqlite3/sharp/node-sass cần build từ source. Next.js tự ship binary
+# SWC (Rust, thay Babel để compile/minify) dưới dạng optional dependency
+# platform-specific (@next/swc-linux-x64-gnu cho glibc, @next/swc-linux-x64-musl
+# cho alpine) - CẢ 2 base image đều có sẵn wheel/binary tương ứng, không phải
+# tự compile như trường hợp Python.
+#
+# Vẫn chọn slim vì 2 lý do khác:
+# 1. Rủi ro tương lai: khi thêm tính năng tối ưu ảnh (next/image + `sharp`) -
+#    rất phổ biến trong project e-commerce - sharp cần libvips, trên alpine
+#    (musl) từng có lịch sử build lỗi/chậm hơn nhiều so với glibc dù bản mới
+#    đã hỗ trợ musl tốt hơn. Base glibc tránh rủi ro này ngay từ đầu.
+# 2. Nhất quán với Backend: cả 2 service dùng base Debian - nếu cần
+#    `docker exec` vào container để debug (cài thêm tool bằng apt-get), thao
+#    tác giống nhau cho cả Backend lẫn Frontend, không phải nhớ 2 bộ lệnh
+#    (apk vs apt-get) cho 1 project solo.
+#
+# Đánh đổi: alpine nhẹ hơn ~40-50MB. Không đáng kể cho image DEV (không phải
+# tiêu chí chính ở task này) - ưu tiên độ ổn định/nhất quán như Backend.
+FROM node:20-slim
+
+WORKDIR /app
+
+# NODE_ENV=development (mặc định của `node`/npm khi không set, nhưng khai báo
+# tường minh) - đảm bảo `npm ci` cài CẢ devDependencies (eslint, typescript,
+# tailwindcss...) chứ không bị hiểu nhầm là build production.
+ENV NODE_ENV=development
+
+# Copy package.json + package-lock.json TRƯỚC rồi mới install - tận dụng
+# Docker layer cache giống hệt nguyên tắc đã dùng ở Backend: nếu chỉ sửa code
+# (không đổi dependency), layer install dưới được cache lại, không phải tải +
+# cài lại toàn bộ node_modules mỗi lần build.
+COPY package.json package-lock.json ./
+
+# `npm ci` (không phải `npm install`) - cài đúng theo package-lock.json, xóa
+# sạch node_modules cũ trước khi cài (ở đây chưa có gì để xóa) - đảm bảo
+# reproducible build, không bị lệch version do package.json cho phép range (^).
+RUN npm ci
+
+# Copy code SAU cùng - đổi code không làm invalidate cache của layer install ở trên.
+COPY . .
+
+EXPOSE 3000
+
+# Next.js dev server (`next dev`, webpack watcher - package.json hiện KHÔNG
+# bật `--turbo`) dùng fs.watch của Node để theo dõi thay đổi file. Khi code
+# nằm trên volume mount từ Windows/Mac host, sự kiện inotify thật của Linux
+# bên trong container KHÔNG nhận được thay đổi ghi từ host (khác filesystem
+# thật, không phải overlay ext4) -> phải bật polling để watcher tự so sánh
+# mtime định kỳ thay vì chờ event. Không cần nếu chỉ chạy trên Linux host
+# thật, nhưng bật sẵn để hot-reload chắc chắn hoạt động trên mọi OS (đồng
+# nhất với việc Backend từng cân nhắc WATCHFILES_FORCE_POLLING ở task 2.1.1).
+ENV WATCHPACK_POLLING=true
+ENV CHOKIDAR_USEPOLLING=true
+
+# `next dev` mặc định đã lắng nghe trên 0.0.0.0 (không giống uvicorn mặc định
+# bind 127.0.0.1) - không cần thêm cờ --hostname để truy cập từ ngoài container.
+CMD ["npm", "run", "dev"]

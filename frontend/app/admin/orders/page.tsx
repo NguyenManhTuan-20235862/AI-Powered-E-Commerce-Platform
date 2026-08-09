@@ -2,8 +2,8 @@
 export default function AdminOrdersPage() {
   return (
     <div>
-      <h1 className="text-xl font-semibold text-brand-800">Quản lý đơn hàng</h1>
-      <p className="mt-2 text-sm text-brand-500">Danh sách đơn hàng (admin) - sẽ triển khai sau.</p>
+      <h1 className="font-heading text-xl text-foreground">Quản lý đơn hàng</h1>
+      <p className="mt-2 text-sm text-foreground-muted">Danh sách đơn hàng (admin) - sẽ triển khai sau.</p>
     </div>
   );
 }
