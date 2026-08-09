@@ -1,22 +1,28 @@
 "use client";
 
-import { useState } from "react";
-
 /**
- * Client Component - state +/- thuần UI, CHƯA nối logic giỏ hàng thật (task
- * 4.3). `max` (tồn kho) chỉ để chặn chọn số lượng vô lý ngay trên UI - không
- * gọi API nào.
+ * Client Component - +/- số lượng. Component ĐIỀU KHIỂN (controlled, task
+ * 4.3.1 - trước đó tự giữ state nội bộ, CHƯA nối giỏ hàng thật): cha
+ * (`AddToCartSection`) giữ `quantity`, truyền xuống qua props cùng `onChange`
+ * - cần vậy vì cha phải biết quantity hiện tại lúc gọi `addItem()`.
  */
-export function QuantitySelector({ max }: { max?: number }) {
-  const [quantity, setQuantity] = useState(1);
+export function QuantitySelector({
+  quantity,
+  onChange,
+  max,
+}: {
+  quantity: number;
+  onChange: (quantity: number) => void;
+  max?: number;
+}) {
   const hasMax = typeof max === "number" && max > 0;
 
   function decrement() {
-    setQuantity((q) => Math.max(1, q - 1));
+    onChange(Math.max(1, quantity - 1));
   }
 
   function increment() {
-    setQuantity((q) => (hasMax ? Math.min(max as number, q + 1) : q + 1));
+    onChange(hasMax ? Math.min(max as number, quantity + 1) : quantity + 1);
   }
 
   return (

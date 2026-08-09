@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Caprasimo, Figtree } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 // Design token gốc chốt ở task 1.3.4 (trang auth, Claude Design) - task 4.1.1
@@ -22,7 +23,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="vi" className={`${caprasimo.variable} ${figtree.variable}`}>
-      <body className="min-h-screen bg-background font-body text-foreground antialiased">{children}</body>
+      <body className="min-h-screen bg-background font-body text-foreground antialiased">
+        {children}
+        <Toaster position="top-center" richColors closeButton />
+      </body>
     </html>
   );
 }

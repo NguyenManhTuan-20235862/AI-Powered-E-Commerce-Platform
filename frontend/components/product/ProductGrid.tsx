@@ -11,7 +11,7 @@ export function ProductGrid({ products }: { products: Product[] }) {
         </svg>
         <p className="font-heading text-lg text-foreground">Không tìm thấy sản phẩm phù hợp</p>
         <p className="max-w-sm text-sm text-foreground-muted">
-          Thử điều chỉnh bộ lọc hoặc từ khóa tìm kiếm để xem thêm sản phẩm khác.
+          Thử điều chỉnh bộ lọc, đổi từ khóa tìm kiếm, hoặc xóa bộ lọc để xem tất cả sản phẩm.
         </p>
       </div>
     );

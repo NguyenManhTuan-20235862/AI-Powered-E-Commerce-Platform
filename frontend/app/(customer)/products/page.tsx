@@ -41,6 +41,11 @@ function buildProductsQuery(searchParams: SearchParams): URLSearchParams {
   const sortBy = getParam(searchParams, "sort_by");
   if (sortBy) params.set("sort_by", sortBy);
 
+  // task 4.2.3 - Backend đã hỗ trợ search từ task 3.4.1 (ILIKE theo tên),
+  // trước đó Frontend chưa có ô nhập nên chưa từng truyền param này.
+  const search = getParam(searchParams, "search");
+  if (search) params.set("search", search);
+
   return params;
 }
 

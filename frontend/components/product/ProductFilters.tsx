@@ -1,27 +1,78 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import type { Category } from "@/types/category";
 
+// task 4.2.3 - debounce cho search: chờ người dùng ngừng gõ mới điều hướng,
+// tránh gọi API mỗi phím gõ.
+const SEARCH_DEBOUNCE_MS = 450;
+
 /**
- * Client Component - cần state cho checkbox/input/toggle tương tác.
+ * Client Component - cần state cho checkbox/input/toggle/search tương tác.
  *
  * Danh mục: Backend (`GET /products`) chỉ nhận 1 `category_id` (không phải
  * mảng) - checkbox ở đây cố tình hoạt động KIỂU RADIO (chọn 1 mục sẽ bỏ chọn
  * mục còn lại) dù hiển thị bằng checkbox (giữ đúng UI Stitch đã thiết kế),
  * KHÔNG hỗ trợ chọn nhiều danh mục cùng lúc.
+ *
+ * Đồng bộ URL -> widget (task 4.2.3, sửa bug thật đã có từ 4.2.1): state của
+ * các input này ban đầu chỉ đọc `searchParams` MỘT LẦN lúc mount (qua
+ * `useState` initializer) - khi URL đổi từ BÊN NGOÀI component (nút back/
+ * forward trình duyệt, hoặc SortDropdown điều hướng) mà KHÔNG qua nút
+ * "Áp dụng" ở đây, danh sách sản phẩm vẫn đúng (Server Component luôn
+ * re-render theo URL thật) nhưng checkbox/input HIỂN THỊ SAI (state cũ, không
+ * tự cập nhật). `useEffect` bên dưới resync lại toàn bộ state theo
+ * `searchParams` mỗi khi nó đổi (kể cả đổi từ bên ngoài) - bắt buộc phải có,
+ * KHÔNG thể chỉ dựa vào initializer của `useState`.
+ *
+ * Loading state (task 4.2.3): dùng `useTransition` (spinner cục bộ ở nút
+ * "Áp dụng"), KHÔNG dùng `app/(customer)/products/loading.tsx` (Next.js
+ * Suspense boundary tự động) - đã tự thử, gặp bug thật: Server trả response
+ * đầy đủ rất nhanh (~500ms, xác nhận qua log + curl nhận đúng toàn bộ nội
+ * dung), nhưng trình duyệt treo VĨNH VIỄN ở skeleton, không bao giờ swap
+ * sang nội dung thật (tái hiện được nhiều lần, kể cả sau khi restart dev
+ * server) - gỡ bỏ `loading.tsx`, không điều tra sâu hơn (không đáng thời
+ * gian cho 1 file loading tĩnh), chuyển hẳn sang `useTransition` cho chắc.
  */
 export function ProductFilters({ categories }: { categories: Category[] }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
 
   const [categoryId, setCategoryId] = useState(searchParams.get("category") ?? "");
   const [minPrice, setMinPrice] = useState(searchParams.get("min_price") ?? "");
   const [maxPrice, setMaxPrice] = useState(searchParams.get("max_price") ?? "");
   const [inStock, setInStock] = useState(searchParams.get("in_stock") === "1");
+  const [searchTerm, setSearchTerm] = useState(searchParams.get("search") ?? "");
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+  useEffect(() => {
+    setCategoryId(searchParams.get("category") ?? "");
+    setMinPrice(searchParams.get("min_price") ?? "");
+    setMaxPrice(searchParams.get("max_price") ?? "");
+    setInStock(searchParams.get("in_stock") === "1");
+    setSearchTerm(searchParams.get("search") ?? "");
+  }, [searchParams]);
+
+  // Debounce search - CHỈ điều hướng khi searchTerm THẬT SỰ khác giá trị
+  // đang có trên URL (tránh tự bắn thêm 1 lượt điều hướng thừa ngay sau khi
+  // effect resync ở trên vừa set lại searchTerm về đúng giá trị URL).
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const currentSearch = searchParams.get("search") ?? "";
+      if (searchTerm === currentSearch) return;
+      const params = new URLSearchParams(searchParams.toString());
+      if (searchTerm) params.set("search", searchTerm);
+      else params.delete("search");
+      params.delete("page");
+      startTransition(() => {
+        router.push(`/products?${params.toString()}`);
+      });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchTerm, searchParams, router]);
 
   function applyFilters() {
     const params = new URLSearchParams(searchParams.toString());
@@ -37,14 +88,74 @@ export function ProductFilters({ categories }: { categories: Category[] }) {
     // tại với tập kết quả mới, nhỏ hơn).
     params.delete("page");
     setIsMobileOpen(false);
-    router.push(`/products?${params.toString()}`);
+    startTransition(() => {
+      router.push(`/products?${params.toString()}`);
+    });
   }
+
+  function resetFilters() {
+    setCategoryId("");
+    setMinPrice("");
+    setMaxPrice("");
+    setInStock(false);
+    setSearchTerm("");
+    setIsMobileOpen(false);
+    startTransition(() => {
+      router.push("/products");
+    });
+  }
+
+  const hasActiveFilters = Boolean(categoryId || minPrice || maxPrice || inStock || searchTerm);
 
   const formContent = (
     <>
       <div>
-        <h2 className="mb-1 font-heading text-xl text-primary">Bộ lọc</h2>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 font-heading text-xl text-primary">
+            Bộ lọc
+            {isPending && (
+              <span
+                aria-label="Đang cập nhật kết quả"
+                className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-100 border-t-primary"
+              />
+            )}
+          </h2>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              disabled={isPending}
+              className="text-xs text-foreground-secondary underline hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Xóa bộ lọc
+            </button>
+          )}
+        </div>
         <p className="text-sm text-foreground-muted">Tìm kiếm sản phẩm</p>
+      </div>
+
+      <div className="relative">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-foreground-muted"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="M21 21l-4.3-4.3" strokeLinecap="round" />
+        </svg>
+        <input
+          type="search"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Tên sản phẩm..."
+          aria-label="Tìm kiếm sản phẩm theo tên"
+          className="w-full rounded-md border border-border bg-background py-2 pl-9 pr-3 text-sm text-foreground focus:border-primary focus:outline-none"
+        />
       </div>
       <hr className="border-t border-border" />
 
@@ -119,9 +230,11 @@ export function ProductFilters({ categories }: { categories: Category[] }) {
       <button
         type="button"
         onClick={applyFilters}
-        className="w-full rounded-md bg-primary-100 py-3 font-heading text-sm text-primary-800 transition-colors hover:bg-primary-300"
+        disabled={isPending}
+        className="flex w-full items-center justify-center gap-2 rounded-md bg-primary-100 py-3 font-heading text-sm text-primary-800 transition-colors hover:bg-primary-300 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        Áp dụng
+        {isPending && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-300 border-t-primary-800" />}
+        {isPending ? "Đang áp dụng..." : "Áp dụng"}
       </button>
     </>
   );

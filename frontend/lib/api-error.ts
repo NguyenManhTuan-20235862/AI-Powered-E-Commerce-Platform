@@ -18,6 +18,22 @@ export function extractFieldError(err: unknown, field: string): string | undefin
   return undefined;
 }
 
+/**
+ * Lấy thẳng `message` thật từ envelope lỗi Backend (VD lỗi Cart 400 -
+ * "Chỉ còn 3 sản phẩm ... trong kho" - xem app/services/cart_service.py) thay
+ * vì hiện thông báo chung chung - `http_exception_handler` (app/main.py) đã
+ * bọc MỌI HTTPException vào đúng `{success, message}` nên field này luôn có
+ * nội dung tiếng Việt đọc được, không phải mã lỗi kỹ thuật.
+ */
+export function extractApiErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof AxiosError) {
+    if (!err.response) return "Không thể kết nối đến máy chủ. Vui lòng kiểm tra mạng và thử lại.";
+    const body = err.response.data as ApiErrorBody | undefined;
+    if (body?.message) return body.message;
+  }
+  return fallback;
+}
+
 /** Message chung, an toàn cho người dùng - không lộ status code hay stack trace. */
 export function genericAuthErrorMessage(err: unknown, context: "login" | "register"): string {
   if (err instanceof AxiosError) {
