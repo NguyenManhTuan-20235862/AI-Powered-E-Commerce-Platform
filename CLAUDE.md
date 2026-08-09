@@ -49,9 +49,21 @@ task 2.1.2):
 - Axios (gọi API)
 - TailwindCSS 3.4 + PostCSS + Autoprefixer
 - TypeScript 5, ESLint 9 + eslint-config-next
+- Vitest + React Testing Library + `@testing-library/jest-dom`/`user-event`
+  (task 4.2.3 — `npm test`, xem `frontend/vitest.config.ts`) — component test
+  CHẠY ĐỘC LẬP (jsdom, mock `next/navigation`), KHÔNG cần dev server/browser
+  thật, khác hẳn cách verify Frontend đã dùng trước giờ (browser automation
+  thủ công mỗi task, vẫn tiếp tục dùng song song cho việc xem UI/luồng thật) —
+  dùng cho case cần assert hành vi re-render cụ thể khó verify bằng mắt
+  (VD `components/product/ProductFilters.test.tsx`).
+- sonner (task 4.3.1) — toast feedback (`<Toaster />` mount ở `app/layout.tsx`
+  gốc). Thư viện duy nhất được chọn cho toast trong dự án — không tự viết
+  component toast riêng, không thêm thư viện toast thứ 2.
 
 **Chưa có trong repo** (đừng giả định tồn tại): `Makefile`, CI config, linter/
-formatter cho backend (không có ruff/black), test nào cho frontend.
+formatter cho backend (không có ruff/black). Frontend GIỜ ĐÃ CÓ test (Vitest,
+xem trên) nhưng mới chỉ 1 file (`ProductFilters.test.tsx`) — chưa phải coverage
+đầy đủ toàn bộ component.
 `docker-compose.yml` (gốc repo, task 2.3.1 → 2.3.4 + 3.5.2) đã ĐỦ 6 service
 (`mysql`, `mongodb`, `redis`, `backend`, `frontend`, `product-sync-scheduler`)
 - `docker compose up` (không chỉ định service) giờ chạy được TOÀN BỘ stack
@@ -133,6 +145,8 @@ npm run dev     # dev server: http://localhost:3000
 npm run build   # production build
 npm run start   # chạy bản build
 npm run lint    # eslint
+npm test        # vitest run (task 4.2.3) - test chạy trong process Node, KHÔNG
+                 # cần dev server đang chạy
 ```
 
 **Test `nginx/nginx.conf`** (task 2.4.1 - CHƯA có service `nginx` trong
@@ -205,8 +219,9 @@ app/
 (fetch phía SERVER, task 4.2.1 - xem giải thích `API_INTERNAL_URL` bên dưới),
 `lib/auth.ts` (đọc/ghi token localStorage), `hooks/useAuth.ts`, `types/`
 (`common.ts` - envelope `ApiResponse`/`PaginatedResponse` dùng chung; User/
-Product/Category khớp schema Backend thật; Cart/Order vẫn placeholder cũ, xem
-`docs/KNOWN_TODOS.md` #20).
+Product/Category/Cart khớp schema Backend thật (Cart viết lại đúng ở task
+4.3.1, đóng `docs/KNOWN_TODOS.md` #20 phần Cart); Order vẫn placeholder cũ,
+xem `docs/KNOWN_TODOS.md` #20 phần còn lại).
 
 **Design token** (task 4.1.1, xem `docs/DESIGN_TOKENS.md`) — màu/font/radius/
 shadow khai báo 1 lần dạng CSS custom property ở `app/globals.css` (`:root`),
@@ -244,6 +259,18 @@ Component, hiển thị thuần), `ProductFilters`/`SortDropdown` (Client Compon
 đổi URL `searchParams` - filter/sort/trang đều nằm trên URL, không phải state
 component, để share link/back-forward hoạt động đúng).
 
+`ProductFilters` (task 4.2.3 - bổ sung sau) thêm ô search (debounce 450ms,
+tự điều hướng, không cần bấm "Áp dụng") và nút "Xóa bộ lọc" (reset cả URL lẫn
+widget). QUAN TRỌNG: state các field (category/giá/tồn-kho/search) PHẢI có
+`useEffect` resync lại theo `searchParams` mỗi khi nó đổi - nếu chỉ đọc qua
+`useState(searchParams.get(...))` (initializer, chạy 1 lần lúc mount), widget
+sẽ hiển thị SAI khi URL đổi từ bên ngoài (back/forward trình duyệt) dù danh
+sách sản phẩm vẫn đúng - đã tự gặp bug này thật (xem
+`components/product/ProductFilters.test.tsx`, task 4.2.3, test đầu tiên của
+Frontend). Loading state (khi đổi filter/sort/search) dùng `useTransition`
+(spinner cục bộ) - **KHÔNG dùng `app/(customer)/products/loading.tsx`** (đã
+tự thử, gặp bug treo trang thật, xem `docs/KNOWN_TODOS.md` #21).
+
 `app/(customer)/products/[slug]/page.tsx` (task 4.2.2) - trang chi tiết,
 `generateMetadata()` động theo tên/mô tả sản phẩm thật, `notFound()` khi
 `GET /products/{id_or_slug}` trả 404 (route Backend nhận CẢ `id` số LẪN
@@ -256,6 +283,28 @@ Section "Sản phẩm liên quan" TÁI SỬ DỤNG `ProductGrid` có sẵn (khô
 `ProductCard` riêng). Section "Đánh giá" CHỈ placeholder tĩnh
 ("Chưa có đánh giá nào") - `GET /products/{id}/reviews` vẫn `501` (MongoDB
 service layer chưa tới task tương ứng), KHÔNG gọi API này.
+
+**`context/CartContext.tsx`** (task 4.3.1) - state giỏ hàng dùng CHUNG qua
+React Context, KHÔNG phải custom hook fetch riêng lẻ mỗi component (chọn
+Context vì Header/ProductCard/ProductInfo đều cần thấy cùng 1 trạng thái giỏ
+hàng đồng bộ ngay lập tức). `CartProvider` bọc trong `app/(customer)/layout.tsx`
+(ngang cấp `Header`/`Footer`) - CHỈ route Customer cần giỏ hàng, `app/admin/`
+không wrap (khớp Backend `require_role(UserRole.customer)` chặn Admin ở mọi
+endpoint `/cart`). Chỉ gọi `GET /cart` khi `useAuth().isAuthenticated === true`
+(gọi lúc chưa có token luôn 401, vô nghĩa).
+
+Nguyên tắc BẮT BUỘC: mọi action (`addItem`/`updateQuantity`/`removeItem`) set
+state TRỰC TIẾP từ `CartRead` trong response Backend trả về sau mỗi request -
+KHÔNG tự cộng/trừ `quantity`/`total_amount` ở client. Lý do: Backend là nguồn
+sự thật duy nhất cho việc cộng dồn số lượng + validate tồn kho
+(`app/services/cart_service.py:add_item()`) - tự tính lại ở client dễ lệch nếu
+request bị Backend từ chối 1 phần hoặc tồn kho đổi giữa chừng. `totalCount`
+(badge Header) = TỔNG `quantity` mọi dòng (`reduce`), KHÔNG PHẢI `items.length`
+(số dòng sản phẩm khác nhau) - đúng quy ước badge giỏ hàng phổ biến.
+`isAuthenticated` cũng export lại từ `useCart()` để `AddToCartButton`/
+`AddToCartSection` (component thêm-vào-giỏ ở `ProductCard`/`ProductInfo`) dùng
+chung, tránh mỗi nơi tự gọi `useAuth()` riêng (mỗi lần gọi tốn 1 request
+`GET /auth/me` - xem thêm `docs/KNOWN_TODOS.md` #22).
 
 **Luồng dữ liệu chính**:
 - **MySQL** (qua SQLAlchemy): dữ liệu quan hệ — User, Product, Category, Cart, Order.
@@ -320,6 +369,20 @@ service layer chưa tới task tương ứng), KHÔNG gọi API này.
   (Deploy Frontend): đổi API URL giữa các môi trường (staging/production) bắt
   buộc phải build lại image tương ứng, không thể dùng chung 1 image cho nhiều
   môi trường như Backend (chỉ cần đổi `--env-file`/biến môi trường lúc chạy).
+- **Cài package Frontend mới (`npm install <gói>`) trên HOST KHÔNG đủ để
+  container `frontend` thấy được gói đó** (đã tự gặp lỗi thật lúc thêm `sonner`
+  task 4.3.1: `next dev` báo "Module not found: Can't resolve 'sonner'" dù
+  `package.json`/`package-lock.json` đã đúng, cài xong trên host, cả 2 khớp
+  nhau) — `docker-compose.yml` mount `frontend_node_modules` là NAMED VOLUME
+  riêng đè lên `/app/node_modules` (cố ý, xem comment ngay tại đó — tránh
+  `node_modules` cài trên host (Windows) đè lên bản Linux đã cài lúc build
+  image), nên named volume này KHÔNG tự đồng bộ theo `npm install` chạy trên
+  host. Sau khi thêm package mới vào `package.json`, PHẢI cài thêm 1 lần NỮA
+  bên trong chính container đang chạy rồi restart để `next dev` nhận layer
+  mới: `docker compose exec frontend npm install` (hoặc `npm install <gói>`
+  nếu chỉ vừa thêm 1 gói) → `docker compose restart frontend`. Bỏ qua bước
+  này sẽ mất thời gian debug lại y hệt lỗi "Module not found" đã gặp - không
+  phải lỗi code, chỉ là node_modules trong container chưa cập nhật.
 - **Upload ảnh sản phẩm (task 3.4.1) lưu LOCAL** (`app/core/storage.py`, thư mục
   `uploads/`, serve qua `StaticFiles` mount ở `/api/v1/uploads`) — dev có bind
   mount nên persist thật trên host, nhưng `Dockerfile.prod` KHÔNG có bind mount

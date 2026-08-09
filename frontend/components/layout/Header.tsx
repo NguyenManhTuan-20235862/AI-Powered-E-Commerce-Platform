@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/hooks/useAuth";
+import { useCart } from "@/context/CartContext";
 
 const NAV_ITEMS = [
   { href: "/", label: "Trang chủ" },
@@ -12,14 +13,12 @@ const NAV_ITEMS = [
   { href: "/chat", label: "Chat AI" },
 ];
 
-// TODO (task 4.3 - Giỏ hàng): thay bằng số lượng thật từ GET /cart. Cố tình
-// để 0 (không gọi API giả) - badge chỉ hiện khi > 0 nên hiện tại ẩn hoàn toàn,
-// đúng vị trí UI đã có sẵn cho lúc tích hợp thật.
-const CART_ITEM_COUNT = 0;
-
 export function Header() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading, logout } = useAuth();
+  // task 4.3.1 - số lượng thật từ CartContext (Provider bọc ở
+  // app/(customer)/layout.tsx, tự trả rỗng khi chưa đăng nhập).
+  const { totalCount } = useCart();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -65,9 +64,9 @@ export function Header() {
               <circle cx="18" cy="21" r="1.4" />
               <path d="M2.5 3h2l2.6 12.6a1.8 1.8 0 0 0 1.8 1.4h8.4a1.8 1.8 0 0 0 1.75-1.4L21.5 8H6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            {CART_ITEM_COUNT > 0 && (
+            {totalCount > 0 && (
               <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] text-background">
-                {CART_ITEM_COUNT}
+                {totalCount}
               </span>
             )}
           </Link>

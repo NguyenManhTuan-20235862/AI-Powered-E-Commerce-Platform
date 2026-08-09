@@ -1,14 +1,15 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { AddToCartButton } from "@/components/product/AddToCartButton";
 import { formatPriceVnd, resolveProductImageUrl } from "@/lib/format";
 import type { Product } from "@/types/product";
 
 /**
- * Server Component - không cần "use client": chỉ hiển thị, không có state/
- * event handler thật. Nút giỏ hàng/yêu thích để DECORATIVE (không onClick) -
- * thêm giỏ hàng thật thuộc task 4.3 (GET/POST /cart), chưa tích hợp ở đây,
- * tương tự cách Header (task 4.1.2) để badge giỏ hàng tĩnh chờ task 4.3.
+ * Server Component - không cần "use client": chỉ hiển thị, không có state
+ * riêng. Nút "Thêm vào giỏ" tách thành `AddToCartButton` (Client Component,
+ * task 4.3.1) - nút yêu thích (trái tim) vẫn DECORATIVE, chưa có task nào
+ * dùng tới.
  */
 export function ProductCard({ product }: { product: Product }) {
   const imageUrl = resolveProductImageUrl(product.image_url);
@@ -59,16 +60,7 @@ export function ProductCard({ product }: { product: Product }) {
 
         <div className="mt-auto flex items-end justify-between">
           <span className="font-body text-lg font-bold text-primary">{formatPriceVnd(product.price)}</span>
-          <span
-            aria-hidden="true"
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-background text-foreground-muted transition-colors group-hover:bg-primary group-hover:text-background"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <circle cx="9" cy="21" r="1.4" />
-              <circle cx="18" cy="21" r="1.4" />
-              <path d="M2.5 3h2l2.6 12.6a1.8 1.8 0 0 0 1.8 1.4h8.4a1.8 1.8 0 0 0 1.75-1.4L21.5 8H6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
+          <AddToCartButton productId={product.id} disabled={product.stock_quantity <= 0} />
         </div>
       </div>
     </Link>

@@ -1,4 +1,4 @@
-import { QuantitySelector } from "@/components/product/QuantitySelector";
+import { AddToCartSection } from "@/components/product/AddToCartSection";
 import { formatPriceVnd } from "@/lib/format";
 import type { Product } from "@/types/product";
 
@@ -58,21 +58,7 @@ export function ProductInfo({ product }: { product: Product }) {
         </div>
       )}
 
-      <div className="mb-8 flex items-center gap-4">
-        <QuantitySelector max={product.stock_quantity} />
-        <button
-          type="button"
-          disabled={!inStock}
-          className="flex h-14 flex-grow items-center justify-center gap-2 rounded-2xl bg-primary font-heading text-background transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-foreground-muted disabled:opacity-60"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-            <path d="M6 7h15l-1.5 9h-12L6 7Zm0 0L5 3H2" strokeLinecap="round" strokeLinejoin="round" />
-            <circle cx="9.5" cy="20" r="1.2" />
-            <circle cx="17.5" cy="20" r="1.2" />
-          </svg>
-          {inStock ? "Thêm vào giỏ" : "Hết hàng"}
-        </button>
-      </div>
+      <AddToCartSection productId={product.id} stockQuantity={product.stock_quantity} />
 
       <div className="grid grid-cols-3 gap-4 border-t border-border pt-6">
         {TRUST_BADGES.map((badge) => (
