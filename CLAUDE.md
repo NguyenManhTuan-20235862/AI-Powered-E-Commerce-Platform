@@ -244,6 +244,19 @@ Component, hiển thị thuần), `ProductFilters`/`SortDropdown` (Client Compon
 đổi URL `searchParams` - filter/sort/trang đều nằm trên URL, không phải state
 component, để share link/back-forward hoạt động đúng).
 
+`app/(customer)/products/[slug]/page.tsx` (task 4.2.2) - trang chi tiết,
+`generateMetadata()` động theo tên/mô tả sản phẩm thật, `notFound()` khi
+`GET /products/{id_or_slug}` trả 404 (route Backend nhận CẢ `id` số LẪN
+`slug` - xem docstring `product_service._id_or_slug_filter()`). Thêm
+`components/product/ProductGallery.tsx` (hiện chỉ 1 ảnh, đặt tên tổng quát
+để mở rộng sau), `ProductInfo.tsx` (Server Component), `QuantitySelector.tsx`
+(Client Component, chỉ UI +/-, CHƯA nối giỏ hàng thật - task 4.3),
+`Breadcrumb.tsx` (dùng chung được cho trang khác, không riêng trang này).
+Section "Sản phẩm liên quan" TÁI SỬ DỤNG `ProductGrid` có sẵn (không viết
+`ProductCard` riêng). Section "Đánh giá" CHỈ placeholder tĩnh
+("Chưa có đánh giá nào") - `GET /products/{id}/reviews` vẫn `501` (MongoDB
+service layer chưa tới task tương ứng), KHÔNG gọi API này.
+
 **Luồng dữ liệu chính**:
 - **MySQL** (qua SQLAlchemy): dữ liệu quan hệ — User, Product, Category, Cart, Order.
 - **MongoDB** (qua PyMongo): dữ liệu phi cấu trúc — Chat log (AI Agent), Review.

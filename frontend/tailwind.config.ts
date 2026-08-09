@@ -59,6 +59,12 @@ const config: Config = {
         // Tương đương --shadow-lg (auth.css) - màu bóng đổ ấm (nâu tối) thay
         // vì đen thuần mặc định của Tailwind, khớp tông "warm & tin cậy".
         warm: "0 12px 32px rgba(46, 43, 37, 0.22)",
+        // Task 4.2.2 - bóng đổ NHẸ hơn "warm" cho card/section tĩnh (không
+        // hover), khớp đúng giá trị Stitch DESIGN.md quy định cho trang chi
+        // tiết sản phẩm ("Warm Tonal Layering"): "0 8px 24px -4px rgba(32,
+        // 30, 29, 0.08)" - dùng foreground (#201e1d) làm màu bóng, không
+        // phải đen thuần, giữ đúng "warm & tin cậy".
+        soft: "0 8px 24px -4px rgba(32, 30, 29, 0.08)",
       },
     },
   },
