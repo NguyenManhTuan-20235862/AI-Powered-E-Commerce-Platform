@@ -302,6 +302,41 @@ def test_list_products_only_shows_active(client: TestClient, db: Session) -> Non
     assert created["id"] not in ids
 
 
+def test_list_products_admin_requires_admin(client: TestClient, db: Session) -> None:
+    customer_headers = _customer_headers(db)
+    response = client.get("/api/v1/products/admin", headers=customer_headers)
+    assert response.status_code == 403
+
+
+def test_list_products_admin_shows_inactive_products(client: TestClient, db: Session) -> None:
+    """Task 4.4.1 - khác `GET /products` public (chỉ is_active=True),
+    `/products/admin` PHẢI thấy cả sản phẩm đã ẩn."""
+    category = _create_category(db)
+    headers = _admin_headers(db)
+    created = _create_product(client, headers, category.id)
+    client.delete(f"/api/v1/products/{created['id']}", headers=headers)
+
+    response = client.get("/api/v1/products/admin", headers=headers)
+    ids = [item["id"] for item in response.json()["data"]["items"]]
+    assert created["id"] in ids
+
+
+def test_list_products_admin_filters_by_is_active(client: TestClient, db: Session) -> None:
+    category = _create_category(db)
+    headers = _admin_headers(db)
+    active_product = _create_product(client, headers, category.id, name="Còn hiện")
+    inactive_product = _create_product(client, headers, category.id, name="Đã ẩn")
+    client.delete(f"/api/v1/products/{inactive_product['id']}", headers=headers)
+
+    only_active = client.get("/api/v1/products/admin", params={"is_active": True}, headers=headers)
+    active_ids = {item["id"] for item in only_active.json()["data"]["items"]}
+    assert active_ids == {active_product["id"]}
+
+    only_inactive = client.get("/api/v1/products/admin", params={"is_active": False}, headers=headers)
+    inactive_ids = {item["id"] for item in only_inactive.json()["data"]["items"]}
+    assert inactive_ids == {inactive_product["id"]}
+
+
 def test_list_products_filter_by_category(client: TestClient, db: Session) -> None:
     category_a = _create_category(db, name="A")
     category_b = _create_category(db, name="B")

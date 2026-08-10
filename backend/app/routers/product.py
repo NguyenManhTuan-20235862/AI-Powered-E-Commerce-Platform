@@ -86,6 +86,40 @@ def list_products(
 
 
 @router.get(
+    "/admin",
+    response_model=APIResponse[PaginatedResponse[ProductRead]],
+    summary="Danh sách sản phẩm (Admin - gồm cả sản phẩm đã ẩn)",
+    responses=auth_responses(forbidden=True),
+)
+def list_products_admin(
+    current_user: Annotated[User, Depends(require_role(UserRole.admin))],
+    db: Annotated[Session, Depends(get_db)],
+    pagination: Annotated[PaginationParams, Depends()],
+    category_id: int | None = None,
+    search: str | None = None,
+    is_active: bool | None = None,
+) -> APIResponse[PaginatedResponse[ProductRead]]:
+    """Danh sách sản phẩm cho trang quản lý (task 4.4.1) - KHÔNG lọc
+    `is_active` mặc định (khác `GET /products` public), lọc được qua
+    `?is_active=true/false` nếu Admin muốn xem riêng nhóm đang hiện/đã ẩn.
+    Yêu cầu: Admin.
+
+    Đăng ký TRƯỚC `GET /{id_or_slug}` (path cố định `/admin` phải đứng trước
+    route templated, giống quy ước đã áp dụng cho `/orders/admin` - nếu
+    không, `/{id_or_slug}` sẽ nuốt mất request `/products/admin`, hiểu nhầm
+    "admin" là 1 slug/id)."""
+    result = product_service.list_products_admin(
+        db,
+        page=pagination.page,
+        page_size=pagination.page_size,
+        category_id=category_id,
+        search=search,
+        is_active=is_active,
+    )
+    return success_response(data=result)
+
+
+@router.get(
     "/{id_or_slug}",
     response_model=APIResponse[ProductRead],
     summary="Chi tiết 1 sản phẩm",

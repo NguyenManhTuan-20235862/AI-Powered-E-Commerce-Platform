@@ -188,6 +188,38 @@ def list_products(
     return paginated_response(items, total, page, page_size)
 
 
+def list_products_admin(
+    db: Session,
+    *,
+    page: int,
+    page_size: int,
+    category_id: int | None = None,
+    search: str | None = None,
+    is_active: bool | None = None,
+) -> PaginatedResponse[ProductRead]:
+    """Danh sách sản phẩm cho ADMIN (task 4.4.1) - KHÔNG lọc `is_active` mặc
+    định (thấy CẢ sản phẩm đã ẩn, khác `list_products()` public ở trên luôn
+    cứng `is_active=True`) - chỉ lọc khi Admin chọn rõ (`is_active=True` để
+    xem sản phẩm đang hiện, `False` để xem sản phẩm đã ẩn, bỏ trống = tất cả).
+
+    KHÔNG cache qua Redis (khác GET /products public) - chỉ 1 Admin dùng
+    trang này, lượng truy cập thấp, không đáng đánh đổi độ trễ cache (dữ liệu
+    có thể cũ ngay sau khi Admin vừa CRUD) lấy hiệu năng không đáng kể.
+    """
+    query = db.query(Product, Category.name).join(Category, Product.category_id == Category.id)
+    if is_active is not None:
+        query = query.filter(Product.is_active.is_(is_active))
+    if category_id is not None:
+        query = query.filter(Product.category_id == category_id)
+    if search:
+        query = query.filter(Product.name.ilike(f"%{search}%"))
+
+    total = query.count()
+    rows = query.order_by(Product.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    items = [to_product_read(product, category_name) for product, category_name in rows]
+    return paginated_response(items, total, page, page_size)
+
+
 def _id_or_slug_filter(id_or_slug: str):
     """Task 4.2.2 - trang chi tiết sản phẩm (Frontend) link theo `slug`
     (SEO-friendly URL, `/products/binh-gom-thu-cong`), không phải `id` số -

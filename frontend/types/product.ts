@@ -26,3 +26,32 @@ export interface Product {
 }
 
 export type ProductSortBy = "newest" | "price_asc" | "price_desc";
+
+// Khớp `ProductCreate` thật (backend/app/schemas/product.py, task 3.4.1) -
+// `slug` cố tình KHÔNG có ở đây (task 4.4.1 - Admin không nhập tay, luôn để
+// Backend tự sinh từ `name`, xem giải thích ở CLAUDE.md mục Admin/Product).
+// `price` là string (input dạng text/number chuyển sang string trước khi
+// gửi) - cùng lý do Product.price, Backend nhận Decimal qua Pydantic.
+export interface ProductCreatePayload {
+  category_id: number;
+  name: string;
+  description?: string;
+  price: string;
+  // Optional - form Admin (task 4.4.1) KHÔNG có field tồn kho (đúng quyết
+  // định 3.4.1, xem ProductUpdatePayload bên dưới) nên không gửi field này
+  // lúc tạo, để Backend tự áp dụng default=0 (ProductCreate.stock_quantity).
+  stock_quantity?: number;
+}
+
+// Khớp `ProductUpdate` thật - TOÀN BỘ field optional (partial update, field
+// không truyền = giữ nguyên ở Backend, `exclude_unset`). CỐ TÌNH KHÔNG có
+// `stock_quantity` (Backend cũng không nhận field này qua PUT - xem docstring
+// `ProductUpdate` gốc: rủi ro "lost update" với giao dịch checkout đang trừ
+// kho tương đối cùng lúc, cần cơ chế riêng nhận DELTA, chưa làm - task 8.2).
+export interface ProductUpdatePayload {
+  category_id?: number;
+  name?: string;
+  description?: string;
+  price?: string;
+  is_active?: boolean;
+}
