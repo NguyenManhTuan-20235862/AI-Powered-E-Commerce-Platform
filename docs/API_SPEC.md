@@ -37,7 +37,8 @@
 
 | Method | Path | Mô tả | Quyền truy cập | Role |
 |--------|------|-------|-----------------|------|
-| GET | `/products` | Danh sách sản phẩm (phân trang, filter theo category/giá/tồn kho, search theo tên, sắp xếp `sort_by`: newest/price_asc/price_desc - task 4.2.1) | 🔓 Public | - |
+| GET | `/products` | Danh sách sản phẩm (phân trang, filter theo category/giá/tồn kho, search theo tên, sắp xếp `sort_by`: newest/price_asc/price_desc - task 4.2.1) - CHỈ `is_active=true` | 🔓 Public | - |
+| GET | `/products/admin` | Danh sách sản phẩm cho trang quản lý (task 4.4.1) - gồm CẢ sản phẩm `is_active=false`, lọc được qua `?is_active=` | 🔒 Auth | Admin |
 | GET | `/products/{id_or_slug}` | Chi tiết 1 sản phẩm - nhận `id` (số) hoặc `slug` (task 4.2.2) | 🔓 Public | - |
 | GET | `/products/{id_or_slug}/related` | Sản phẩm liên quan / tương tự (dùng chung logic với AI gợi ý thay thế) - nhận `id` hoặc `slug` (task 4.2.2) | 🔓 Public | - |
 | POST | `/products` | Tạo sản phẩm mới | 🔒 Auth | Admin |

@@ -451,6 +451,8 @@ KHÔNG tự patch state cục bộ - đơn vừa hủy có thể không còn kh�
 - Route `/orders/admin` (path cố định) được đăng ký TRƯỚC `/orders/{order_id}`
   trong `app/routers/order.py` — nếu thêm route mới có path cố định xen giữa các
   route templated, giữ đúng thứ tự này để tránh bị route templated nuốt mất.
+  **`/products/admin`** (task 4.4.1, `app/routers/product.py`) áp dụng ĐÚNG quy
+  tắc này — đăng ký TRƯỚC `/products/{id_or_slug}`.
 - **`frontend/Dockerfile.prod` cần `NEXT_PUBLIC_API_URL` qua `--build-arg` lúc
   `docker build`, KHÔNG PHẢI lúc `docker run`** (task 2.2.2) — đã tự kiểm chứng:
   đổi biến này lúc `docker run -e ...` không có tác dụng gì, giá trị lúc build
