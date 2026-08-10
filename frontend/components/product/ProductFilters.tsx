@@ -109,29 +109,41 @@ export function ProductFilters({ categories }: { categories: Category[] }) {
 
   const formContent = (
     <>
-      <div>
-        <div className="mb-1 flex items-center justify-between gap-2">
-          <h2 className="flex items-center gap-2 font-heading text-xl text-primary">
-            Bộ lọc
-            {isPending && (
-              <span
-                aria-label="Đang cập nhật kết quả"
-                className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-100 border-t-primary"
-              />
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 font-heading text-xl text-primary">
+              Bộ lọc
+              {isPending && (
+                <span
+                  aria-label="Đang cập nhật kết quả"
+                  className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-100 border-t-primary"
+                />
+              )}
+            </h2>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                disabled={isPending}
+                className="text-xs text-foreground-secondary underline hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Xóa bộ lọc
+              </button>
             )}
-          </h2>
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={resetFilters}
-              disabled={isPending}
-              className="text-xs text-foreground-secondary underline hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Xóa bộ lọc
-            </button>
-          )}
+          </div>
+          <p className="text-sm text-foreground-muted">Tìm kiếm sản phẩm</p>
         </div>
-        <p className="text-sm text-foreground-muted">Tìm kiếm sản phẩm</p>
+        <button
+          type="button"
+          onClick={() => setIsMobileOpen(false)}
+          aria-label="Đóng bộ lọc"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground-secondary hover:bg-primary-100 hover:text-foreground md:hidden"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+          </svg>
+        </button>
       </div>
 
       <div className="relative">
@@ -253,7 +265,13 @@ export function ProductFilters({ categories }: { categories: Category[] }) {
       </div>
 
       {isMobileOpen && (
-        <div className="fixed inset-0 z-40 bg-foreground/40 md:hidden" onClick={() => setIsMobileOpen(false)} />
+        // bg-black/40 (KHÔNG PHẢI bg-foreground/40) - foreground là CSS custom
+        // property trần (var(--color-text), app/globals.css), Tailwind không
+        // tạo được utility opacity cho màu dạng này (đã tự kiểm chứng: build
+        // ra .bg-foreground nhưng KHÔNG có .bg-foreground\/40 nào cả -> lớp
+        // phủ vô hình, backdrop không tối đi). Màu built-in (black) hỗ trợ
+        // opacity modifier bình thường.
+        <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setIsMobileOpen(false)} />
       )}
 
       <aside

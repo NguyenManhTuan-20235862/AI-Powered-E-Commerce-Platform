@@ -58,14 +58,18 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-4">
-          <Link href="/cart" className="relative text-foreground-secondary hover:text-foreground" aria-label="Giỏ hàng">
+          <Link
+            href="/cart"
+            className="relative flex h-11 w-11 items-center justify-center text-foreground-secondary hover:text-foreground"
+            aria-label="Giỏ hàng"
+          >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
               <circle cx="9" cy="21" r="1.4" />
               <circle cx="18" cy="21" r="1.4" />
               <path d="M2.5 3h2l2.6 12.6a1.8 1.8 0 0 0 1.8 1.4h8.4a1.8 1.8 0 0 0 1.75-1.4L21.5 8H6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             {totalCount > 0 && (
-              <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] text-background">
+              <span className="absolute right-2.5 top-2.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] text-background">
                 {totalCount}
               </span>
             )}
@@ -120,7 +124,7 @@ export function Header() {
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen((open) => !open)}
-            className="text-foreground md:hidden"
+            className="flex h-11 w-11 items-center justify-center text-foreground md:hidden"
             aria-label="Mở menu"
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
