@@ -111,8 +111,13 @@ def list_all_orders(
     status_filter: Annotated[OrderStatus | None, Query(alias="status")] = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    # task 4.4.2 - tìm theo "mã đơn hàng" (thực chất là `id` số, hệ thống
+    # không có mã dạng chữ, xem docstring `order_service.list_orders()`) hoặc
+    # theo tên khách hàng (`shipping_name`) - dùng chung 1 ô search ở UI.
+    search: str | None = None,
 ) -> APIResponse[PaginatedResponse[OrderRead]]:
-    """Danh sách toàn bộ đơn hàng (filter theo trạng thái, ngày). Yêu cầu: Admin."""
+    """Danh sách toàn bộ đơn hàng (filter theo trạng thái, ngày, tìm theo mã
+    đơn/tên khách hàng qua `?search=`). Yêu cầu: Admin."""
     items, total = order_service.list_orders(
         db,
         page=pagination.page,
@@ -121,6 +126,7 @@ def list_all_orders(
         status_filter=status_filter,
         date_from=date_from,
         date_to=date_to,
+        search=search,
     )
     return success_response(data=paginated_response(items, total, pagination.page, pagination.page_size))
 

@@ -77,7 +77,7 @@
 | GET | `/orders` | Danh sách đơn hàng của user hiện tại (lọc được theo trạng thái qua `?status=`, task 4.3.3) | 🔒 Auth | Customer |
 | GET | `/orders/{order_id}` | Chi tiết 1 đơn hàng | 🔒 Auth | Customer (chủ đơn), Admin |
 | PUT | `/orders/{order_id}/cancel` | Hủy đơn hàng (nếu đủ điều kiện) | 🔒 Auth | Customer (chủ đơn) |
-| GET | `/orders/admin` | Danh sách toàn bộ đơn hàng (filter theo trạng thái, ngày) | 🔒 Auth | Admin |
+| GET | `/orders/admin` | Danh sách toàn bộ đơn hàng (filter theo trạng thái, ngày; tìm theo mã đơn/tên khách hàng qua `?search=`, task 4.4.2) | 🔒 Auth | Admin |
 | PUT | `/orders/{order_id}/status` | Cập nhật trạng thái đơn hàng (xác nhận, đang giao, đã giao) | 🔒 Auth | Admin |
 
 ---

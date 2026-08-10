@@ -421,6 +421,65 @@ def test_list_all_orders_filter_by_status(client: TestClient, db: Session) -> No
     assert cancelled.json()["data"]["total"] == 1
 
 
+def test_list_all_orders_search_by_id(client: TestClient, db: Session) -> None:
+    """task 4.4.2 - hệ thống không có mã đơn hàng dạng chữ, "tìm theo mã đơn
+    hàng" thực chất tìm theo `id` số - chấp nhận cả input trần "123" lẫn
+    format hiển thị "#123"/"VUN123" (UI có thể gửi nguyên định dạng cosmetic).
+    """
+    category = _create_category(db)
+    product = _create_product(db, category.id, stock_quantity=10)
+    headers_a = _customer_headers(db)
+    headers_b = _customer_headers(db)
+    _add_to_cart(client, headers_a, product.id)
+    order_a_id = client.post("/api/v1/orders", json=VALID_CHECKOUT_PAYLOAD, headers=headers_a).json()["data"]["id"]
+    _add_to_cart(client, headers_b, product.id)
+    client.post("/api/v1/orders", json=VALID_CHECKOUT_PAYLOAD, headers=headers_b)
+
+    admin_headers = _admin_headers(db)
+    for search_value in (str(order_a_id), f"#{order_a_id}", f"VUN{order_a_id}"):
+        response = client.get("/api/v1/orders/admin", params={"search": search_value}, headers=admin_headers)
+        data = response.json()["data"]
+        assert data["total"] == 1, search_value
+        assert data["items"][0]["id"] == order_a_id, search_value
+
+
+def test_list_all_orders_search_by_customer_name(client: TestClient, db: Session) -> None:
+    category = _create_category(db)
+    product = _create_product(db, category.id, stock_quantity=10)
+    headers_a = _customer_headers(db)
+    headers_b = _customer_headers(db)
+    _add_to_cart(client, headers_a, product.id)
+    client.post(
+        "/api/v1/orders",
+        json={**VALID_CHECKOUT_PAYLOAD, "shipping_name": "Trần Thị Bích"},
+        headers=headers_a,
+    )
+    _add_to_cart(client, headers_b, product.id)
+    client.post(
+        "/api/v1/orders",
+        json={**VALID_CHECKOUT_PAYLOAD, "shipping_name": "Lê Văn Cường"},
+        headers=headers_b,
+    )
+
+    admin_headers = _admin_headers(db)
+    response = client.get("/api/v1/orders/admin", params={"search": "bích"}, headers=admin_headers)
+    data = response.json()["data"]
+    assert data["total"] == 1
+    assert data["items"][0]["shipping_name"] == "Trần Thị Bích"
+
+
+def test_list_all_orders_without_search_param_is_backward_compatible(client: TestClient, db: Session) -> None:
+    category = _create_category(db)
+    product = _create_product(db, category.id, stock_quantity=10)
+    headers = _customer_headers(db)
+    _add_to_cart(client, headers, product.id)
+    client.post("/api/v1/orders", json=VALID_CHECKOUT_PAYLOAD, headers=headers)
+
+    admin_headers = _admin_headers(db)
+    response = client.get("/api/v1/orders/admin", headers=admin_headers)
+    assert response.json()["data"]["total"] == 1
+
+
 def test_update_order_status_requires_admin(client: TestClient, db: Session) -> None:
     category = _create_category(db)
     product = _create_product(db, category.id)

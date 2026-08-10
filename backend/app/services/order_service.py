@@ -132,6 +132,7 @@ def list_orders(
     status_filter: OrderStatus | None,
     date_from: date | None,
     date_to: date | None,
+    search: str | None = None,
 ) -> tuple[list[OrderRead], int]:
     """`user_id=None` - dùng cho Admin (mọi user); `user_id=<id>` - dùng cho
     Customer (chỉ đơn của chính họ, xem `GET /orders`).
@@ -140,6 +141,15 @@ def list_orders(
     (...)` (KHÔNG dùng `relationship()`, cùng convention `product_service.py`)
     - tránh N+1 (1 query cho order_items của TOÀN BỘ trang, không phải 1
     query/đơn hàng).
+
+    `search` (task 4.4.2, Admin - `GET /orders/admin`) - hệ thống KHÔNG có
+    field mã đơn hàng dạng chữ (VD "VUN001") ở bất kỳ đâu, chỉ có `id` số
+    thuần - "tìm theo mã đơn hàng" ở UI thực chất là tìm theo `id`, hiển thị
+    cosmetic thành "#123". Parse: bỏ tiền tố "#" hoặc "VUN" (không phân biệt
+    hoa/thường) nếu có, phần còn lại toàn số -> so khớp CHÍNH XÁC `Order.id`;
+    ngược lại (không phải số) -> tìm theo `Order.shipping_name` (tên khách
+    nhận hàng lúc đặt, KHÔNG phải `users.full_name` - cùng lý do snapshot đã
+    ghi ở `orders.shipping_name`, task 4.3.2).
     """
     query = db.query(Order)
     if user_id is not None:
@@ -154,6 +164,16 @@ def list_orders(
         # date_to" (không cộng thêm) sẽ hiểu ngầm là "< date_to 00:00:00",
         # LOẠI TRỪ nhầm toàn bộ ngày date_to.
         query = query.filter(Order.created_at < date_to + timedelta(days=1))
+    if search:
+        stripped = search.strip()
+        if stripped.lower().startswith("vun"):
+            stripped = stripped[3:]
+        elif stripped.startswith("#"):
+            stripped = stripped[1:]
+        if stripped.isdigit():
+            query = query.filter(Order.id == int(stripped))
+        else:
+            query = query.filter(Order.shipping_name.ilike(f"%{search.strip()}%"))
 
     total = query.count()
     orders = query.order_by(Order.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
