@@ -332,8 +332,9 @@ liên quan `/cart`) rồi `router.push("/checkout/success?order_id=<id>")`.
 `/orders/[id]/confirmation`** (quyết định có chủ đích) - đây là bước CUỐI
 nhất thời của luồng checkout, không phải thuộc tính bền vững của resource đơn
 hàng; đặt dưới `/orders/[id]/...` sẽ khiến trang trông như "vừa đặt hàng xong"
-mỗi lần bookmark/quay lại xem dù đơn có thể đã giao từ lâu - giữ `/orders/[id]`
-trống cho trang chi tiết đơn hàng thật (chưa làm) sau này. `OrderConfirmation.tsx`
+mỗi lần bookmark/quay lại xem dù đơn có thể đã giao từ lâu - `/orders/[id]`
+CHỈ có stub tĩnh ("sẽ triển khai sau", thêm ở task 4.3.3) chờ trang chi tiết
+đơn hàng thật sau này, xem mục Order History bên dưới. `OrderConfirmation.tsx`
 (bọc `<Suspense>` vì dùng `useSearchParams()`, cùng lý do `LoginForm`) fetch
 LẠI `GET /orders/{id}` (không tin dữ liệu response `POST /orders` truyền qua
 điều hướng - không truyền được qua URL, và fetch lại giúp trang chịu được
@@ -361,6 +362,38 @@ nếu Client Component dùng `next/image` với origin tính từ `API_INTERNAL_
 đúng cách ở Client Component vẫn phải trỏ `API_INTERNAL_URL`, nhưng biến đó
 không đọc được ở client-side code - đơn giản nhất là bỏ tối ưu ảnh Next.js
 cho riêng trường hợp này, tải thẳng qua trình duyệt bằng `NEXT_PUBLIC_API_URL`.
+
+**`app/(customer)/orders/`** (task 4.3.3, "Trang lịch sử đơn hàng") - `page.tsx`
+là Client Component (CSR), KHÔNG phải Server Component/SSR như `/products` -
+đánh đổi NGƯỢC LẠI với catalog: trang này cần tương tác nhiều (đổi tab lọc,
+hủy đơn, cập nhật danh sách ngay không reload) hơn là cần SEO (trang cá nhân,
+luôn yêu cầu đăng nhập, không có ý nghĩa để index). Tab lọc (`OrderStatusFilter.tsx`)
+vẫn dùng URL `?status=` làm nguồn sự thật (cùng pattern `ProductFilters` task
+4.2.3, giữ share link/back-forward) nhưng data re-fetch qua `useEffect` gọi
+thẳng `api` (axios) thay vì Next.js tự re-render Server Component theo URL.
+`GET /orders` (Backend) trước đó KHÔNG nhận `?status=` (chỉ `GET /orders/admin`
+có) - mở rộng thêm ở task này, tái dùng NGUYÊN `order_service.list_orders()`
+đã có sẵn tham số này từ task 3.4.2 (chỉ thiếu khai báo ở router).
+
+`components/order/OrderStatusBadge.tsx` map 5 trạng thái `OrderStatus` ->
+màu/nhãn - CHỈ dùng token thật đã có (`primary`/`secondary`/`error`, không có
+token thứ 4/5 nào khác trong dự án): `pending` (`primary-100`, nhạt nhất) ->
+`confirmed` (`primary-300`) -> `shipping` (`primary` đặc, đang diễn ra) ->
+`delivered` (`secondary` đặc, thành công) -> `cancelled` (`error-container`,
+khớp đúng màu Stitch dùng cho trạng thái này). Thiết kế Stitch chỉ minh họa
+3/5 trạng thái (pending/delivered/cancelled) - `confirmed`/`shipping` tự chọn
+thêm theo đúng quy tắc trên.
+
+`OrderCard.tsx` KHÔNG hiển thị ảnh thumbnail sản phẩm như thiết kế Stitch gốc
+(quyết định có chủ đích) - `OrderItemRead` (Backend) là snapshot BẤT BIẾN,
+CỐ TÌNH không có field ảnh (không join dữ liệu sản phẩm hiện tại vào 1 đơn đã
+chốt trong quá khứ, cùng nguyên tắc `product_name`/`price_at_purchase` snapshot
+đã có từ task 3.1.3) - card chỉ hiện text (tên sản phẩm đầu + "và N sản phẩm
+khác", tổng số lượng). Nút "Hủy đơn" CHỈ hiện khi `status === "pending"` (khớp
+`cancel_order()` Backend), dùng `window.confirm()` xác nhận trước khi gọi API
+(chưa có modal component riêng trong dự án, đúng quy mô đồ án) - hủy xong gọi
+lại `onCancelled` (cha `fetchOrders()` lại toàn bộ theo đúng tab đang chọn,
+KHÔNG tự patch state cục bộ - đơn vừa hủy có thể không còn khớp tab đang xem).
 
 **Luồng dữ liệu chính**:
 - **MySQL** (qua SQLAlchemy): dữ liệu quan hệ — User, Product, Category, Cart, Order.

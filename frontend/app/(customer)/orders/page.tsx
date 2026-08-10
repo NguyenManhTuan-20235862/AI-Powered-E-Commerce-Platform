@@ -1,9 +1,14 @@
-// TODO (Thành viên B): fetch lịch sử đơn hàng của user (cần đăng nhập) qua lib/axios.
-export default function OrderHistoryPage() {
+import { Suspense } from "react";
+
+import { OrdersView } from "@/components/order/OrdersView";
+
+// OrdersView dùng useSearchParams() (đọc ?status=/?page=) - bắt buộc bọc
+// Suspense, cùng lý do LoginForm/OrderConfirmation - Next.js App Router yêu
+// cầu Suspense boundary cho mọi component gọi hook này.
+export default function OrdersPage() {
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10">
-      <h1 className="font-heading text-xl text-foreground">Lịch sử đơn hàng</h1>
-      <p className="mt-2 text-sm text-foreground-muted">Danh sách đơn hàng của bạn - sẽ triển khai sau.</p>
-    </div>
+    <Suspense fallback={<div className="py-16 text-center text-foreground-muted">Đang tải...</div>}>
+      <OrdersView />
+    </Suspense>
   );
 }

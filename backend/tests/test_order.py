@@ -301,6 +301,35 @@ def test_list_my_orders_only_shows_own_orders(client: TestClient, db: Session) -
     assert response.json()["data"]["total"] == 0
 
 
+def test_list_my_orders_filters_by_status(client: TestClient, db: Session) -> None:
+    """Task 4.3.3 - `?status=` chỉ trả đúng đơn khớp trạng thái, không lẫn
+    đơn khác trạng thái của CÙNG user."""
+    category = _create_category(db)
+    product = _create_product(db, category.id, stock_quantity=10)
+    headers = _customer_headers(db)
+
+    _add_to_cart(client, headers, product.id)
+    pending_order_id = client.post("/api/v1/orders", json=VALID_CHECKOUT_PAYLOAD, headers=headers).json()["data"][
+        "id"
+    ]
+    _add_to_cart(client, headers, product.id)
+    cancelled_order_id = client.post("/api/v1/orders", json=VALID_CHECKOUT_PAYLOAD, headers=headers).json()["data"][
+        "id"
+    ]
+    client.put(f"/api/v1/orders/{cancelled_order_id}/cancel", headers=headers)
+
+    pending_response = client.get("/api/v1/orders?status=pending", headers=headers)
+    pending_ids = [o["id"] for o in pending_response.json()["data"]["items"]]
+    assert pending_ids == [pending_order_id]
+
+    cancelled_response = client.get("/api/v1/orders?status=cancelled", headers=headers)
+    cancelled_ids = [o["id"] for o in cancelled_response.json()["data"]["items"]]
+    assert cancelled_ids == [cancelled_order_id]
+
+    all_response = client.get("/api/v1/orders", headers=headers)
+    assert all_response.json()["data"]["total"] == 2
+
+
 # ---- Cancel: hoàn kho, chỉ cho hủy khi pending ----
 
 

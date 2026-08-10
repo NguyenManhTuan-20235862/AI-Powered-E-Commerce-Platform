@@ -76,14 +76,19 @@ def list_my_orders(
     current_user: Annotated[User, Depends(require_role(UserRole.customer))],
     db: Annotated[Session, Depends(get_db)],
     pagination: Annotated[PaginationParams, Depends()],
+    # alias="status" - cùng lý do list_all_orders() bên dưới (tên query param
+    # tự nhiên cho client, tên Python tránh che module fastapi.status). Thêm
+    # task 4.3.3 - phục vụ tab lọc trạng thái ở trang lịch sử đơn hàng.
+    status_filter: Annotated[OrderStatus | None, Query(alias="status")] = None,
 ) -> APIResponse[PaginatedResponse[OrderRead]]:
-    """Danh sách đơn hàng của user hiện tại. Yêu cầu: Customer."""
+    """Danh sách đơn hàng của user hiện tại, lọc được theo trạng thái qua
+    `?status=`. Yêu cầu: Customer."""
     items, total = order_service.list_orders(
         db,
         page=pagination.page,
         page_size=pagination.page_size,
         user_id=current_user.id,
-        status_filter=None,
+        status_filter=status_filter,
         date_from=None,
         date_to=None,
     )
