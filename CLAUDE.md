@@ -15,86 +15,55 @@ chat AI) qua WebSocket/SSE.
 
 ## Tech Stack
 
-Liệt kê đúng theo `backend/requirements-core.txt` + `backend/requirements-ai.txt`
-+ `backend/requirements-test.txt` + `backend/requirements-prod.txt` và
-`frontend/package.json` — không có gì ngoài danh sách này đang thực sự được
-dùng trong code.
+Danh sách thư viện thật: xem `backend/requirements-{core,ai,test,prod}.txt`
+và `frontend/package.json` — không có gì ngoài các file này đang thực sự
+được dùng trong code.
 
-**Backend** (`backend/requirements-core.txt` — cài mặc định, kể cả trong
-`Dockerfile.dev` VÀ `Dockerfile.prod`):
-- FastAPI 0.115 + Uvicorn (ASGI server)
-- Pydantic 2.10 + pydantic-settings (đọc config từ `.env`)
-- SQLAlchemy 2.0 + Alembic (ORM + migration cho MySQL) + PyMySQL (driver)
-- PyMongo 4.10 (MongoDB - chat log, review)
-- redis-py 5.2 (cache, session, rate limit)
-- python-jose + passlib[bcrypt] (JWT, hash password - đã implement thật từ task 1.3.3)
-- python-multipart (form-data / upload file)
-- email-validator (bắt buộc để dùng `EmailStr` trong Pydantic)
+**Vì sao Backend tách 4 file requirements** (quyết định kiến trúc, không tự
+đọc code suy ra được):
+- `requirements-core.txt` — cài mặc định, kể cả `Dockerfile.dev` VÀ `.prod`.
+- `requirements-ai.txt` — CHƯA cài mặc định (LangChain + langchain-openai),
+  vì CHƯA có code tích hợp AI Agent nào trong `app/`; cài kèm khi vào task 6.x.
+- `requirements-test.txt` — cài trong `Dockerfile.dev`, KHÔNG cài `.prod`
+  (task 2.1.2) — production không cần test framework lúc chạy thật.
+- `requirements-prod.txt` — CHỈ cài trong `Dockerfile.prod` (Gunicorn, task
+  2.1.2) — dev dùng `uvicorn --reload` trực tiếp, không cần Gunicorn.
 
-**Backend** (`backend/requirements-ai.txt` — CHƯA cài mặc định, xem Notes):
-- LangChain + langchain-openai — tách riêng khỏi requirements-core.txt vì CHƯA
-  có code tích hợp AI Agent nào trong `app/`; cài kèm khi bắt đầu task 6.x.
+**Frontend** — lưu ý riêng ngoài danh sách package: Vitest + RTL (task 4.2.3,
+`npm test`) test CHẠY ĐỘC LẬP (jsdom, mock `next/navigation`), không cần dev
+server/browser thật — khác cách verify Frontend trước giờ (browser automation
+thủ công, vẫn dùng song song cho UI/luồng thật), dùng cho case assert
+re-render khó kiểm bằng mắt (VD `ProductFilters.test.tsx`). sonner (task
+4.3.1) — toast feedback (`<Toaster />` ở `app/layout.tsx` gốc), thư viện toast
+DUY NHẤT trong dự án — không viết component riêng, không thêm thư viện thứ 2.
 
-**Backend** (`backend/requirements-test.txt` — cài trong `Dockerfile.dev`,
-KHÔNG cài trong `Dockerfile.prod`, task 2.1.2):
-- pytest + httpx (test) — production không cần test framework lúc chạy thật.
+**Chưa có trong repo**: `Makefile`, CI config, linter/formatter Backend (không
+ruff/black). Frontend chỉ 1 file test (`ProductFilters.test.tsx`) — chưa phải
+coverage toàn bộ component.
 
-**Backend** (`backend/requirements-prod.txt` — CHỈ cài trong `Dockerfile.prod`,
-task 2.1.2):
-- Gunicorn (process manager, chạy Uvicorn worker) — dev dùng `uvicorn --reload`
-  trực tiếp, không cần Gunicorn.
+`docker-compose.yml` (task 2.3.1→2.3.4+3.5.2) đủ 6 service (mysql, mongodb,
+redis, backend, frontend, product-sync-scheduler) — `docker compose up` chạy
+TOÀN BỘ stack 1 lệnh (xem Commands). Vẫn CHƯA có compose riêng cho production
+(Dockerfile.prod Backend/Frontend chưa dùng ở đâu — việc deploy sau này).
 
-**Frontend** (`frontend/package.json`):
-- Next.js 15 (App Router) + React 19
-- Axios (gọi API)
-- TailwindCSS 3.4 + PostCSS + Autoprefixer
-- TypeScript 5, ESLint 9 + eslint-config-next
-- Vitest + React Testing Library + `@testing-library/jest-dom`/`user-event`
-  (task 4.2.3 — `npm test`, xem `frontend/vitest.config.ts`) — component test
-  CHẠY ĐỘC LẬP (jsdom, mock `next/navigation`), KHÔNG cần dev server/browser
-  thật, khác hẳn cách verify Frontend đã dùng trước giờ (browser automation
-  thủ công mỗi task, vẫn tiếp tục dùng song song cho việc xem UI/luồng thật) —
-  dùng cho case cần assert hành vi re-render cụ thể khó verify bằng mắt
-  (VD `components/product/ProductFilters.test.tsx`).
-- sonner (task 4.3.1) — toast feedback (`<Toaster />` mount ở `app/layout.tsx`
-  gốc). Thư viện duy nhất được chọn cho toast trong dự án — không tự viết
-  component toast riêng, không thêm thư viện toast thứ 2.
+**`product-sync-scheduler`** (task 3.5.2, `run_scheduler.py`) — tiến trình
+APScheduler ĐỘC LẬP, không chung process với `backend` (Gunicorn/API), dùng
+lại NGUYÊN Dockerfile.dev/prod của Backend (chỉ đổi `command:` thành
+`python -m scripts.run_scheduler`), chạy `sync_products_to_mongo()` theo cron
+`PRODUCT_SYNC_CRON` (mặc định `0 2 * * *`, giờ VN). Tách container riêng để
+tránh N Gunicorn worker mỗi worker tự chạy 1 lịch riêng (sync trùng N lần) —
+luôn ĐÚNG 1 tiến trình chạy scheduler bất kể `backend` bao nhiêu worker. Lỗi
+lúc sync chỉ log, KHÔNG crash scheduler. Chạy tay: `docker compose exec
+product-sync-scheduler python -m scripts.sync_products_to_mongo` — CỐ TÌNH
+không có endpoint HTTP, xem docstring `run_scheduler.py`.
 
-**Chưa có trong repo** (đừng giả định tồn tại): `Makefile`, CI config, linter/
-formatter cho backend (không có ruff/black). Frontend GIỜ ĐÃ CÓ test (Vitest,
-xem trên) nhưng mới chỉ 1 file (`ProductFilters.test.tsx`) — chưa phải coverage
-đầy đủ toàn bộ component.
-`docker-compose.yml` (gốc repo, task 2.3.1 → 2.3.4 + 3.5.2) đã ĐỦ 6 service
-(`mysql`, `mongodb`, `redis`, `backend`, `frontend`, `product-sync-scheduler`)
-- `docker compose up` (không chỉ định service) giờ chạy được TOÀN BỘ stack
-bằng 1 lệnh, xem Commands. Vẫn CHƯA có: file compose riêng cho production
-(Dockerfile.prod của Backend/Frontend chưa được dùng ở đâu cả, đó là việc
-khác - task deploy sau này).
-
-**`product-sync-scheduler`** (task 3.5.2, `backend/scripts/run_scheduler.py`)
-- tiến trình APScheduler ĐỘC LẬP, KHÔNG chung process với `backend`
-(Gunicorn/API) - dùng lại NGUYÊN `Dockerfile.dev`/`Dockerfile.prod` của
-Backend (chỉ đổi `command:` để chạy `python -m scripts.run_scheduler` thay vì
-uvicorn/gunicorn), chạy `sync_products_to_mongo()` (task 3.5.1) theo lịch cron
-đọc từ `PRODUCT_SYNC_CRON` (mặc định `0 2 * * *`, giờ Việt Nam). Tách container
-riêng (không nhúng APScheduler vào `app/main.py`) để tránh N Gunicorn worker
-của `backend` production mỗi worker tự chạy 1 bản lịch riêng (sync trùng N
-lần mỗi khi tới giờ) - luôn ĐÚNG 1 tiến trình chạy scheduler bất kể `backend`
-có bao nhiêu worker. Lỗi trong lúc sync (MySQL/Mongo tạm thời không kết nối
-được...) chỉ log, KHÔNG crash scheduler - tự chờ lịch chạy kế tiếp. Trigger
-chạy tay (test/verify): `docker compose exec product-sync-scheduler python -m
-scripts.sync_products_to_mongo` - CỐ TÌNH không có endpoint HTTP cho việc
-này, xem lý do đầy đủ trong docstring `run_scheduler.py`.
-
-`nginx/nginx.conf` (task 2.4.1) đã có - routing `/` → `frontend:3000`, `/api/`
-→ `backend:8000` (giữ nguyên path, KHÔNG strip `/api` - khớp `API_PREFIX =
-"/api/v1"` đã gắn cứng trong `app/main.py`, áp dụng cho MỌI router kể cả
-`/ws/chat` và `/notifications/*/stream` - path thật là `/api/v1/ws/chat`,
-KHÔNG PHẢI `/ws/chat` trơ dù cách đọc lướt `docs/API_SPEC.md` dễ hiểu nhầm).
-**CHƯA đưa nginx vào `docker-compose.yml`** (quyết định có chủ đích, xem
-`docs/KNOWN_TODOS.md` nếu có ghi chú thêm) - dev vẫn truy cập trực tiếp
-`:3000`/`:8000` như từ task 2.3.4, `nginx/nginx.conf` hiện chỉ test độc lập
-bằng container tạm (xem Commands).
+`nginx/nginx.conf` (task 2.4.1) — routing `/` → `frontend:3000`, `/api/` →
+`backend:8000` (giữ nguyên path, KHÔNG strip `/api`, khớp `API_PREFIX =
+"/api/v1"` gắn cứng trong `main.py`, áp dụng cả `/ws/chat`/
+`/notifications/*/stream` — path thật là `/api/v1/ws/chat`, không phải
+`/ws/chat` trơ). **CHƯA đưa nginx vào `docker-compose.yml`** (có chủ đích,
+xem `docs/KNOWN_TODOS.md`) — dev vẫn truy cập trực tiếp `:3000`/`:8000`,
+`nginx.conf` chỉ test độc lập bằng container tạm (xem Commands).
 
 ## Commands
 
@@ -181,219 +150,154 @@ docker rm -f nginx-test                    # dọn sau khi test xong
 
 ## Architecture
 
-**Backend** (`backend/app/`) — chia theo layer, file đặt tên theo domain trong
-mỗi layer (khớp `docs/API_SPEC.md`):
-```
-app/
-├── main.py           # khởi tạo FastAPI, CORS, OpenAPI tags, include router
-├── core/
-│   ├── config.py          # Settings (pydantic-settings, đọc .env)
-│   ├── database.py        # engine MySQL, MongoClient, Redis client
-│   ├── security.py        # get_current_user (decode JWT thật, require_role — xem Notes)
-│   ├── cache.py            # get_or_set_cache()/invalidate_by_prefix() (Redis, task 3.3.1/3.4.1)
-│   ├── storage.py          # lưu ảnh upload local (task 3.4.1 — xem Notes)
-│   └── openapi_responses.py  # helper responses={401,403,404,429} dùng chung
-├── routers/           # 1 file/module: auth, user, product, category, cart,
-│                        order, payment, review, ai_chat, notification, dashboard
-├── models/             # SQLAlchemy models (MySQL) — đủ cột thật (User task 1.3.1,
-│                        Category/Product task 3.1.2, CartItem/Order/OrderItem/
-│                        Payment task 3.1.3), migrate qua Alembic (task 3.1.4)
-├── schemas/            # Pydantic schemas, gồm common.py (envelope response chuẩn)
-└── services/            # business logic tách khỏi router — auth/product/cart/order
-                           đã có logic thật (task 1.3.2, 3.4.1, 3.4.2); category CHỈ
-                           `list_categories()` thật (task 4.2.1, phục vụ filter
-                           trang catalog) — CRUD category (POST/PUT/DELETE) vẫn
-                           placeholder; dashboard/payment vẫn placeholder (chưa
-                           tới task tương ứng)
-```
+Cấu trúc thư mục `backend/app/` và `frontend/app/` — xem trực tiếp cấu trúc
+thư mục, chuẩn layer (core/routers/models/schemas/services) và route-group
+(App Router) thông thường, khớp `docs/API_SPEC.md`. Các điểm KHÔNG tự đọc
+code suy ra được (quyết định/gap phát sinh) liệt kê dưới đây:
 
-**Frontend** (`frontend/app/`) — App Router, chia theo route group:
-```
-app/
-├── (customer)/    # route group: Header/Footer, "/" "/products" "/cart"...
-├── (auth)/         # route group: layout 2 cột full-bleed riêng, "/login" "/register"
-└── admin/           # segment THẬT (không phải route group) → "/admin/*"
-                       # (tránh trùng URL với (customer)/products)
-```
-`lib/axios.ts` (interceptor gắn JWT, dùng phía CLIENT), `lib/api-server.ts`
-(fetch phía SERVER, task 4.2.1 - xem giải thích `API_INTERNAL_URL` bên dưới),
-`lib/auth.ts` (đọc/ghi token localStorage), `hooks/useAuth.ts`, `types/`
-(`common.ts` - envelope `ApiResponse`/`PaginatedResponse` dùng chung; User/
-Product/Category/Cart khớp schema Backend thật (Cart viết lại đúng ở task
-4.3.1, đóng `docs/KNOWN_TODOS.md` #20 phần Cart); Order vẫn placeholder cũ,
-xem `docs/KNOWN_TODOS.md` #20 phần còn lại).
+- Backend: category service CHỈ `list_categories()` thật (task 4.2.1, phục
+  vụ filter trang catalog) — CRUD category (POST/PUT/DELETE) vẫn placeholder;
+  dashboard/payment vẫn placeholder (chưa tới task tương ứng).
+- Frontend: `app/admin/` là segment THẬT (không phải route group), tránh
+  trùng URL với `(customer)/products`.
 
-**Design token** (task 4.1.1, xem `docs/DESIGN_TOKENS.md`) — màu/font/radius/
-shadow khai báo 1 lần dạng CSS custom property ở `app/globals.css` (`:root`),
-`tailwind.config.ts` map thành class ngữ nghĩa (`bg-primary`, `bg-surface`,
-`text-foreground`, `font-heading`...) TRỎ THẲNG vào cùng biến đó — không lặp
-lại giá trị hex. Component mới (catalog, admin...) dùng thẳng class Tailwind
-này; `app/(auth)/auth.css` (CSS thuần, không phải Tailwind utility, viết từ
-task 1.3.4) vẫn giữ nguyên cách viết cũ, chỉ đọc chung biến `--color-*`/
-`--font-*` từ `globals.css` thay vì tự khai báo `:root` riêng.
+`lib/axios.ts` (interceptor gắn JWT, CLIENT), `lib/api-server.ts` (fetch phía
+SERVER, task 4.2.1 — xem `API_INTERNAL_URL` bên dưới), `lib/auth.ts` (token
+localStorage), `hooks/useAuth.ts`, `types/` (`common.ts` — envelope
+`ApiResponse`/`PaginatedResponse` chung; User/Product/Category/Cart khớp
+schema Backend thật, Cart viết lại ở task 4.3.1 đóng `docs/KNOWN_TODOS.md`
+#20 phần Cart; Order vẫn placeholder cũ, xem #20 phần còn lại).
 
-**`NEXT_PUBLIC_API_URL` luôn phải là URL truy cập được từ trình duyệt** (VD:
-`http://localhost:8000/api/v1`) — **KHÔNG BAO GIỜ** dùng tên service Docker
-(`http://backend:8000`) hay `host.docker.internal`, kể cả sau khi có
-`docker-compose.yml` ở task 2.3. Lý do: biến `NEXT_PUBLIC_*` được Next.js nhúng
-thẳng vào bundle JS chạy ở **trình duyệt người dùng** (client-side), không phải
-chạy trong container - trình duyệt trên máy host không resolve được tên service
-Docker lẫn `host.docker.internal` (hostname đó chỉ có nghĩa bên trong network
-namespace của Docker). Khác với các biến phía Backend (server-side, chỉ chạy
-trong container) - những biến đó mới dùng được tên service/`host.docker.internal`.
-Xem thêm task 2.2.1.
+**Design token** (task 4.1.1, `docs/DESIGN_TOKENS.md`) — màu/font/radius/
+shadow khai báo 1 lần ở `app/globals.css` (`:root`), `tailwind.config.ts` map
+thành class ngữ nghĩa (`bg-primary`, `bg-surface`...) TRỎ THẲNG biến đó, không
+lặp hex. `app/(auth)/auth.css` (CSS thuần, từ task 1.3.4) giữ cách viết cũ
+nhưng đọc chung biến `--color-*`/`--font-*` từ `globals.css`, không tự khai
+báo `:root` riêng.
 
-**`API_INTERNAL_URL` (task 4.2.1) — NGƯỢC LẠI với `NEXT_PUBLIC_API_URL`**, dùng
-cho fetch phía SERVER (Server Component SSR, `lib/api-server.ts:fetchApi()`,
-VD `app/(customer)/products/page.tsx`) VÀ cho origin ảnh `next/image` tối ưu
-(`lib/format.ts:resolveProductImageUrl()`, `next.config.ts`) — cả 2 đều chạy
-TRONG container/process Next.js (kể cả khi trang là SSR hay khi `next/image`
-tối ưu ảnh cho 1 trang CSR, route `/_next/image` LUÔN tự fetch ảnh gốc ở
-server), nên PHẢI dùng tên service Docker (`http://backend:8000/api/v1`) qua
-compose, KHÁC hẳn `NEXT_PUBLIC_API_URL`. Nhầm 2 biến này cho nhau (dùng
-`NEXT_PUBLIC_API_URL` ở Server Component, hoặc `API_INTERNAL_URL` ở Client
-Component) sẽ lỗi kết nối - đã tự gặp cả 2 chiều lúc verify task 4.2.1.
+**`NEXT_PUBLIC_API_URL` luôn phải là URL trình duyệt truy cập được** (VD
+`http://localhost:8000/api/v1`) — KHÔNG BAO GIỜ dùng tên service Docker hay
+`host.docker.internal`. Lý do: biến `NEXT_PUBLIC_*` nhúng thẳng vào bundle JS
+chạy ở trình duyệt (client-side) — hostname Docker chỉ có nghĩa trong network
+namespace Docker, trình duyệt host không resolve được. Biến phía Backend
+(server-side, chạy trong container) thì ngược lại, dùng được tên
+service/`host.docker.internal`. Xem thêm task 2.2.1.
+
+**`API_INTERNAL_URL` (task 4.2.1) — NGƯỢC LẠI `NEXT_PUBLIC_API_URL`** — dùng
+cho fetch phía SERVER (`lib/api-server.ts:fetchApi()`) và origin ảnh
+`next/image` (`lib/format.ts:resolveProductImageUrl()`, `next.config.ts`), vì
+cả 2 chạy TRONG container Next.js (kể cả SSR hay khi `/_next/image` tự fetch
+ảnh gốc ở server cho trang CSR) → phải dùng tên service Docker
+(`http://backend:8000/api/v1`). Nhầm 2 biến cho nhau (NEXT_PUBLIC ở Server
+Component, hoặc ngược lại ở Client Component) → lỗi kết nối, đã tự gặp cả 2
+chiều lúc verify task 4.2.1.
 
 `components/product/` (task 4.2.1): `ProductCard`/`ProductGrid` (Server
-Component, hiển thị thuần), `ProductFilters`/`SortDropdown` (Client Component,
-đổi URL `searchParams` - filter/sort/trang đều nằm trên URL, không phải state
-component, để share link/back-forward hoạt động đúng).
+Component), `ProductFilters`/`SortDropdown` (Client Component, đổi URL
+`searchParams` — filter/sort/trang nằm trên URL để share link/back-forward
+hoạt động đúng).
 
-`ProductFilters` (task 4.2.3 - bổ sung sau) thêm ô search (debounce 450ms,
-tự điều hướng, không cần bấm "Áp dụng") và nút "Xóa bộ lọc" (reset cả URL lẫn
-widget). QUAN TRỌNG: state các field (category/giá/tồn-kho/search) PHẢI có
-`useEffect` resync lại theo `searchParams` mỗi khi nó đổi - nếu chỉ đọc qua
-`useState(searchParams.get(...))` (initializer, chạy 1 lần lúc mount), widget
-sẽ hiển thị SAI khi URL đổi từ bên ngoài (back/forward trình duyệt) dù danh
-sách sản phẩm vẫn đúng - đã tự gặp bug này thật (xem
-`components/product/ProductFilters.test.tsx`, task 4.2.3, test đầu tiên của
-Frontend). Loading state (khi đổi filter/sort/search) dùng `useTransition`
-(spinner cục bộ) - **KHÔNG dùng `app/(customer)/products/loading.tsx`** (đã
-tự thử, gặp bug treo trang thật, xem `docs/KNOWN_TODOS.md` #21).
+`ProductFilters` (task 4.2.3) thêm search (debounce 450ms, tự điều hướng) +
+nút "Xóa bộ lọc". QUAN TRỌNG: state field (category/giá/tồn-kho/search) PHẢI
+có `useEffect` resync theo `searchParams` — chỉ đọc qua
+`useState(searchParams.get(...))` (initializer, 1 lần lúc mount) sẽ hiển thị
+SAI khi URL đổi từ bên ngoài (back/forward), dù list sản phẩm vẫn đúng; đã tự
+gặp bug này (xem `ProductFilters.test.tsx`, test đầu tiên Frontend). Loading
+state dùng `useTransition` — KHÔNG dùng `app/(customer)/products/loading.tsx`
+(đã tự gặp bug treo trang, xem `docs/KNOWN_TODOS.md` #21).
 
-`app/(customer)/products/[slug]/page.tsx` (task 4.2.2) - trang chi tiết,
-`generateMetadata()` động theo tên/mô tả sản phẩm thật, `notFound()` khi
-`GET /products/{id_or_slug}` trả 404 (route Backend nhận CẢ `id` số LẪN
-`slug` - xem docstring `product_service._id_or_slug_filter()`). Thêm
-`components/product/ProductGallery.tsx` (hiện chỉ 1 ảnh, đặt tên tổng quát
-để mở rộng sau), `ProductInfo.tsx` (Server Component), `QuantitySelector.tsx`
-(Client Component, chỉ UI +/-, CHƯA nối giỏ hàng thật - task 4.3),
-`Breadcrumb.tsx` (dùng chung được cho trang khác, không riêng trang này).
-Section "Sản phẩm liên quan" TÁI SỬ DỤNG `ProductGrid` có sẵn (không viết
-`ProductCard` riêng). Section "Đánh giá" CHỈ placeholder tĩnh
-("Chưa có đánh giá nào") - `GET /products/{id}/reviews` vẫn `501` (MongoDB
-service layer chưa tới task tương ứng), KHÔNG gọi API này.
+`app/(customer)/products/[slug]/page.tsx` (task 4.2.2) — `generateMetadata()`
+động, `notFound()` khi `GET /products/{id_or_slug}` 404 (route nhận cả `id`
+số lẫn `slug`, xem `product_service._id_or_slug_filter()`). `ProductGallery.tsx`
+(hiện 1 ảnh, tên tổng quát để mở rộng), `ProductInfo.tsx` (Server Component),
+`QuantitySelector.tsx` (Client, chỉ UI +/-, chưa nối giỏ hàng — task 4.3),
+`Breadcrumb.tsx` (dùng chung). "Sản phẩm liên quan" tái dùng `ProductGrid` có
+sẵn. "Đánh giá" chỉ placeholder tĩnh — `GET /products/{id}/reviews` vẫn
+`501`, KHÔNG gọi API này.
 
-**`context/CartContext.tsx`** (task 4.3.1) - state giỏ hàng dùng CHUNG qua
-React Context, KHÔNG phải custom hook fetch riêng lẻ mỗi component (chọn
-Context vì Header/ProductCard/ProductInfo đều cần thấy cùng 1 trạng thái giỏ
-hàng đồng bộ ngay lập tức). `CartProvider` bọc trong `app/(customer)/layout.tsx`
-(ngang cấp `Header`/`Footer`) - CHỈ route Customer cần giỏ hàng, `app/admin/`
-không wrap (khớp Backend `require_role(UserRole.customer)` chặn Admin ở mọi
-endpoint `/cart`). Chỉ gọi `GET /cart` khi `useAuth().isAuthenticated === true`
-(gọi lúc chưa có token luôn 401, vô nghĩa).
+**`context/CartContext.tsx`** (task 4.3.1) — state giỏ hàng dùng chung qua
+React Context (không phải hook fetch riêng lẻ), vì Header/ProductCard/
+ProductInfo cần cùng trạng thái đồng bộ ngay. `CartProvider` bọc
+`app/(customer)/layout.tsx` — CHỈ route Customer, `app/admin/` không wrap
+(khớp Backend chặn Admin ở `/cart`). Chỉ gọi `GET /cart` khi
+`useAuth().isAuthenticated === true`.
 
 Nguyên tắc BẮT BUỘC: mọi action (`addItem`/`updateQuantity`/`removeItem`) set
-state TRỰC TIẾP từ `CartRead` trong response Backend trả về sau mỗi request -
-KHÔNG tự cộng/trừ `quantity`/`total_amount` ở client. Lý do: Backend là nguồn
-sự thật duy nhất cho việc cộng dồn số lượng + validate tồn kho
-(`app/services/cart_service.py:add_item()`) - tự tính lại ở client dễ lệch nếu
-request bị Backend từ chối 1 phần hoặc tồn kho đổi giữa chừng. `totalCount`
-(badge Header) = TỔNG `quantity` mọi dòng (`reduce`), KHÔNG PHẢI `items.length`
-(số dòng sản phẩm khác nhau) - đúng quy ước badge giỏ hàng phổ biến.
-`isAuthenticated` cũng export lại từ `useCart()` để `AddToCartButton`/
-`AddToCartSection` (component thêm-vào-giỏ ở `ProductCard`/`ProductInfo`) dùng
-chung, tránh mỗi nơi tự gọi `useAuth()` riêng (mỗi lần gọi tốn 1 request
-`GET /auth/me` - xem thêm `docs/KNOWN_TODOS.md` #22).
+state TRỰC TIẾP từ `CartRead` Backend trả về — KHÔNG tự cộng/trừ ở client
+(Backend là nguồn sự thật duy nhất cho cộng dồn số lượng + validate tồn kho,
+`cart_service.py:add_item()`; tự tính lại dễ lệch nếu request bị từ chối 1
+phần hoặc tồn kho đổi giữa chừng). `totalCount` (badge Header) = TỔNG
+`quantity` mọi dòng, KHÔNG PHẢI `items.length`. `isAuthenticated` export lại
+từ `useCart()` để `AddToCartButton`/`AddToCartSection` dùng chung, tránh gọi
+`useAuth()` riêng mỗi nơi (mỗi lần tốn 1 request `GET /auth/me`, xem
+`docs/KNOWN_TODOS.md` #22).
 
-**`app/(customer)/cart/`, `checkout/`, `checkout/success/`** (task 4.3.2) -
-`/cart` (Client Component, đọc thẳng `useCart()`, KHÔNG tự fetch riêng) hiện
-`CartItemRow.tsx` (mỗi dòng tự quản `isPending` cục bộ, gọi
-`updateQuantity`/`removeItem` NGAY khi bấm +/-/xóa - thiết kế Stitch chỉ có
-nút bấm, không có ô nhập số tay, nên không cần debounce, chỉ cần disable nút
-lúc chờ response để tránh bấm dồn). `/checkout` (`CheckoutPage`) CHỈ lo guard
-giỏ hàng trống (redirect `/cart` nếu vào thẳng `/checkout` khi chưa có gì) +
-layout, phần form/submit thật tách ở `CheckoutForm.tsx` (react-hook-form +
-zod, cùng pattern `LoginForm`/`RegisterForm` task 1.3.4) - pre-fill từ
-`useAuth().user` (`fullName`/`phone`/`address`) qua `reset()` trong
-`useEffect` (KHÔNG dùng `defaultValues` - user thường CHƯA load xong lúc form
-mount). **KHÔNG có field `payment_method`** - hệ thống hiện chỉ hỗ trợ COD
-(`backend/app/schemas/order.py:OrderCreate` không có field này), radio
-VNPay/Momo trong UI chỉ decorative (disabled, badge "Sắp ra mắt", đúng thiết
-kế Stitch gốc). Lỗi 409 (thiếu tồn kho, `order_service.checkout()`) hiện
-THẲNG message thật từ Backend (liệt kê đúng sản phẩm thiếu) qua
-`lib/api-error.ts:extractApiErrorMessage()` (task 4.3.2, đọc `body.message`
-từ envelope lỗi chung). Sau khi đặt thành công: gọi TƯỜNG MINH
-`clearCart()` (`CartContext` KHÔNG tự biết `POST /orders` đã xóa
-`cart_items` phía Backend - không có cơ chế tự re-fetch sau 1 request không
-liên quan `/cart`) rồi `router.push("/checkout/success?order_id=<id>")`.
+**`app/(customer)/cart/`, `checkout/`, `checkout/success/`** (task 4.3.2) —
+`/cart` (Client, đọc thẳng `useCart()`) dùng `CartItemRow.tsx` (mỗi dòng tự
+quản `isPending`, gọi update/remove NGAY khi bấm +/-/xóa — thiết kế Stitch
+không có ô nhập số tay nên không cần debounce, chỉ disable nút lúc chờ).
+`/checkout` (`CheckoutPage`) chỉ guard giỏ hàng trống + layout; form thật ở
+`CheckoutForm.tsx` (react-hook-form + zod, cùng pattern Login/RegisterForm) —
+pre-fill từ `useAuth().user` qua `reset()` trong `useEffect` (KHÔNG
+`defaultValues` vì user thường chưa load xong lúc mount). KHÔNG có field
+`payment_method` — hệ thống chỉ hỗ trợ COD, radio VNPay/Momo chỉ decorative
+(disabled, badge "Sắp ra mắt"). Lỗi 409 (thiếu tồn kho) hiện thẳng message
+thật từ Backend qua `lib/api-error.ts:extractApiErrorMessage()`. Sau khi đặt
+thành công: gọi TƯỜNG MINH `clearCart()` (Context không tự biết `POST /orders`
+đã xóa `cart_items`) rồi `router.push("/checkout/success?order_id=<id>")`.
 
-**Route trang xác nhận là `/checkout/success?order_id=<id>`, KHÔNG PHẢI
-`/orders/[id]/confirmation`** (quyết định có chủ đích) - đây là bước CUỐI
-nhất thời của luồng checkout, không phải thuộc tính bền vững của resource đơn
-hàng; đặt dưới `/orders/[id]/...` sẽ khiến trang trông như "vừa đặt hàng xong"
-mỗi lần bookmark/quay lại xem dù đơn có thể đã giao từ lâu - `/orders/[id]`
-CHỈ có stub tĩnh ("sẽ triển khai sau", thêm ở task 4.3.3) chờ trang chi tiết
-đơn hàng thật sau này, xem mục Order History bên dưới. `OrderConfirmation.tsx`
-(bọc `<Suspense>` vì dùng `useSearchParams()`, cùng lý do `LoginForm`) fetch
-LẠI `GET /orders/{id}` (không tin dữ liệu response `POST /orders` truyền qua
-điều hướng - không truyền được qua URL, và fetch lại giúp trang chịu được
-refresh/mở lại link sau đó). **KHÔNG hiển thị "Dự kiến giao hàng"** dù thiết
-kế Stitch có dòng này - Backend không có field ước tính ngày giao, đó là dữ
-liệu bịa của Stitch, không hiện ngày giả.
+**Route xác nhận là `/checkout/success?order_id=<id>`, KHÔNG PHẢI
+`/orders/[id]/confirmation`** (có chủ đích) — đây là bước cuối nhất thời của
+checkout, không phải thuộc tính bền vững của đơn hàng; đặt dưới
+`/orders/[id]/...` sẽ khiến trang trông như "vừa đặt xong" mỗi lần bookmark
+dù đơn có thể đã giao lâu. `/orders/[id]` hiện chỉ stub tĩnh (task 4.3.3).
+`OrderConfirmation.tsx` (bọc `<Suspense>` vì dùng `useSearchParams()`) fetch
+LẠI `GET /orders/{id}` (không tin data từ `POST /orders` truyền qua điều
+hướng — không truyền được qua URL, và fetch lại giúp trang chịu refresh).
+KHÔNG hiển thị "Dự kiến giao hàng" dù Stitch có — Backend không có field ước
+tính ngày giao, không hiện ngày giả.
 
-**`orders.shipping_name`** (task 4.3.2, thêm SAU `orders.shipping_address`/
-`shipping_phone` đã có từ task 3.1.3) - phát sinh từ gap phát hiện lúc port
-Stitch: form checkout có ô "Họ và tên" người nhận nhưng Backend ban đầu không
-có cột nào lưu. Snapshot lúc đặt, CÙNG NGUYÊN TẮC `shipping_address`/
-`shipping_phone` (KHÔNG tham chiếu `users.full_name` - người nhận có thể khác
-chủ tài khoản, VD đặt hộ/tặng). Migration `f00f506b3a6b` (`add_column`/
-`drop_column` đơn giản, không đụng FK/index nên không gặp vấn đề như
-`docs/KNOWN_TODOS.md` #11).
+**`orders.shipping_name`** (task 4.3.2, thêm sau `shipping_address`/
+`shipping_phone` từ task 3.1.3) — gap phát hiện lúc port Stitch: form
+checkout có ô "Họ và tên" người nhận nhưng Backend chưa có cột lưu. Snapshot
+lúc đặt, cùng nguyên tắc `shipping_address`/`shipping_phone` (KHÔNG tham
+chiếu `users.full_name` — người nhận có thể khác chủ tài khoản). Migration
+`f00f506b3a6b` đơn giản, không đụng FK/index nên không gặp vấn đề như
+`docs/KNOWN_TODOS.md` #11.
 
-**Client Component KHÔNG dùng `next/image` để hiển thị ảnh sản phẩm** (VD
-`CartItemRow.tsx`, order summary trong `CheckoutForm.tsx`) - dùng `<img>`
-thường + `lib/format.ts:resolveProductImageUrlClient()` (origin từ
-`NEXT_PUBLIC_API_URL`, KHÁC `resolveProductImageUrl()` gốc dùng
-`API_INTERNAL_URL` cho Server Component). Lý do: `/_next/image` LUÔN fetch
-ảnh gốc Ở PHÍA SERVER bất kể trang là SSR hay CSR (đã note từ task 4.2.1) -
-nếu Client Component dùng `next/image` với origin tính từ `API_INTERNAL_URL`
-(server-only, `undefined` ở trình duyệt) sẽ ra ảnh vỡ; muốn dùng `next/image`
-đúng cách ở Client Component vẫn phải trỏ `API_INTERNAL_URL`, nhưng biến đó
-không đọc được ở client-side code - đơn giản nhất là bỏ tối ưu ảnh Next.js
-cho riêng trường hợp này, tải thẳng qua trình duyệt bằng `NEXT_PUBLIC_API_URL`.
+**Client Component KHÔNG dùng `next/image` cho ảnh sản phẩm** (VD
+`CartItemRow.tsx`, order summary trong `CheckoutForm.tsx`) — dùng `<img>` +
+`lib/format.ts:resolveProductImageUrlClient()` (origin từ
+`NEXT_PUBLIC_API_URL`, khác bản Server Component dùng `API_INTERNAL_URL`). Lý
+do: `/_next/image` luôn fetch ảnh gốc Ở PHÍA SERVER bất kể SSR/CSR — dùng
+`next/image` ở Client Component với `API_INTERNAL_URL` (server-only,
+`undefined` ở browser) sẽ ra ảnh vỡ; đơn giản nhất là bỏ tối ưu ảnh Next.js
+cho case này.
 
-**`app/(customer)/orders/`** (task 4.3.3, "Trang lịch sử đơn hàng") - `page.tsx`
-là Client Component (CSR), KHÔNG phải Server Component/SSR như `/products` -
-đánh đổi NGƯỢC LẠI với catalog: trang này cần tương tác nhiều (đổi tab lọc,
-hủy đơn, cập nhật danh sách ngay không reload) hơn là cần SEO (trang cá nhân,
-luôn yêu cầu đăng nhập, không có ý nghĩa để index). Tab lọc (`OrderStatusFilter.tsx`)
-vẫn dùng URL `?status=` làm nguồn sự thật (cùng pattern `ProductFilters` task
-4.2.3, giữ share link/back-forward) nhưng data re-fetch qua `useEffect` gọi
-thẳng `api` (axios) thay vì Next.js tự re-render Server Component theo URL.
-`GET /orders` (Backend) trước đó KHÔNG nhận `?status=` (chỉ `GET /orders/admin`
-có) - mở rộng thêm ở task này, tái dùng NGUYÊN `order_service.list_orders()`
-đã có sẵn tham số này từ task 3.4.2 (chỉ thiếu khai báo ở router).
+**`app/(customer)/orders/`** (task 4.3.3) — `page.tsx` là Client Component
+(CSR), NGƯỢC LẠI catalog SSR — trang cần tương tác nhiều (đổi tab, hủy đơn,
+cập nhật ngay) hơn cần SEO (trang cá nhân, luôn cần đăng nhập). Tab lọc
+(`OrderStatusFilter.tsx`) vẫn dùng URL `?status=` làm nguồn sự thật (cùng
+pattern `ProductFilters`) nhưng re-fetch qua `useEffect` gọi thẳng axios thay
+vì Server Component tự re-render. `GET /orders` trước đó không nhận
+`?status=` (chỉ `/orders/admin` có) — mở rộng ở task này, tái dùng
+`order_service.list_orders()` có sẵn tham số (chỉ thiếu khai báo router).
 
-`components/order/OrderStatusBadge.tsx` map 5 trạng thái `OrderStatus` ->
-màu/nhãn - CHỈ dùng token thật đã có (`primary`/`secondary`/`error`, không có
-token thứ 4/5 nào khác trong dự án): `pending` (`primary-100`, nhạt nhất) ->
-`confirmed` (`primary-300`) -> `shipping` (`primary` đặc, đang diễn ra) ->
-`delivered` (`secondary` đặc, thành công) -> `cancelled` (`error-container`,
-khớp đúng màu Stitch dùng cho trạng thái này). Thiết kế Stitch chỉ minh họa
-3/5 trạng thái (pending/delivered/cancelled) - `confirmed`/`shipping` tự chọn
-thêm theo đúng quy tắc trên.
+`components/order/OrderStatusBadge.tsx` map 5 trạng thái `OrderStatus` →
+màu, CHỈ dùng token có sẵn (`primary`/`secondary`/`error`): `pending`
+(`primary-100`) → `confirmed` (`primary-300`) → `shipping` (`primary` đặc) →
+`delivered` (`secondary` đặc) → `cancelled` (`error-container`, khớp Stitch).
+Stitch chỉ minh họa 3/5 trạng thái — `confirmed`/`shipping` tự chọn theo quy
+tắc trên.
 
-`OrderCard.tsx` KHÔNG hiển thị ảnh thumbnail sản phẩm như thiết kế Stitch gốc
-(quyết định có chủ đích) - `OrderItemRead` (Backend) là snapshot BẤT BIẾN,
-CỐ TÌNH không có field ảnh (không join dữ liệu sản phẩm hiện tại vào 1 đơn đã
-chốt trong quá khứ, cùng nguyên tắc `product_name`/`price_at_purchase` snapshot
-đã có từ task 3.1.3) - card chỉ hiện text (tên sản phẩm đầu + "và N sản phẩm
-khác", tổng số lượng). Nút "Hủy đơn" CHỈ hiện khi `status === "pending"` (khớp
-`cancel_order()` Backend), dùng `window.confirm()` xác nhận trước khi gọi API
-(chưa có modal component riêng trong dự án, đúng quy mô đồ án) - hủy xong gọi
-lại `onCancelled` (cha `fetchOrders()` lại toàn bộ theo đúng tab đang chọn,
-KHÔNG tự patch state cục bộ - đơn vừa hủy có thể không còn khớp tab đang xem).
+`OrderCard.tsx` KHÔNG hiển thị thumbnail như Stitch (có chủ đích) —
+`OrderItemRead` là snapshot BẤT BIẾN, cố tình không có field ảnh (không join
+dữ liệu sản phẩm hiện tại vào đơn đã chốt, cùng nguyên tắc snapshot
+`product_name`/`price_at_purchase`) — card chỉ hiện text. Nút "Hủy đơn" chỉ
+hiện khi `status === "pending"`, dùng `window.confirm()` (chưa có modal
+riêng, đúng quy mô đồ án) — hủy xong gọi lại `onCancelled` (cha
+`fetchOrders()` lại toàn bộ, KHÔNG tự patch state cục bộ vì đơn vừa hủy có
+thể không còn khớp tab đang xem).
 
 **Luồng dữ liệu chính**:
 - **MySQL** (qua SQLAlchemy): dữ liệu quan hệ — User, Product, Category, Cart, Order.
@@ -417,72 +321,56 @@ KHÔNG tự patch state cục bộ - đơn vừa hủy có thể không còn kh�
 
 ## Notes
 
-- **Đọc `docs/API_SPEC.md` trước khi thêm route mới** — đây là nguồn sự thật cho
-  path/method/tag/quyền truy cập (Public/Auth/Role). Nếu code lệch spec, đồng bộ
-  lại 1 trong 2 phía, đừng để lệch âm thầm.
-- **Không commit `.env` thật** — `.gitignore` (gốc repo VÀ `frontend/.gitignore`,
-  cả 2 đã sửa ở task 2.4.2 - trước đó `frontend/.env.example` bị chặn nhầm,
-  chưa từng commit được) chặn `.env`/`.env.*`, CHỈ cho phép `.env*.example`.
-- **Khi thêm biến môi trường mới** (VD task 8.1 — VNPay/Momo API key): cập
-  nhật CẢ 2 nơi — (1) file `.env.example` tương ứng (root/`backend/`/`frontend/`)
-  và `.env.production.example` cùng cấp nếu biến đó cần giá trị khác ở
-  production, (2) bảng trong `docs/ENV_VARIABLES.md` (task 2.4.2 - tra cứu
-  tổng hợp toàn bộ biến, khỏi phải lục 3 file rải rác). Bỏ qua 1 trong 2 sẽ
-  lặp lại đúng kiểu lệch đã gặp ở `docs/KNOWN_TODOS.md` #6/#7/#8.
-- **`get_current_user` decode JWT THẬT** (`backend/app/core/security.py`, task
-  1.3.3) — verify chữ ký + hạn token bằng `JWT_SECRET_KEY`/`JWT_ALGORITHM`
-  (qua dependency riêng `get_token_payload`, tách từ task 3.3.2 để
-  `POST /auth/logout` tái dùng mà không phải decode token 2 lần), CHECK
-  BLACKLIST qua Redis (`is_token_blacklisted`, task 3.3.2 — key
-  `blacklist:jti:<jti>`, set lúc `POST /auth/logout` với TTL = thời gian còn
-  lại tới lúc token hết hạn tự nhiên), rồi load đúng `User` từ MySQL theo
-  `sub` trong payload, 401 nếu thiếu/sai/hết hạn/đã bị blacklist hoặc
-  `is_active=False`. Redis lỗi lúc check blacklist → **fail-open** (coi như
-  chưa bị blacklist, quyết định có chủ đích — Redis hiện không persist/không
-  cluster, fail-closed sẽ biến Redis thành SPOF cho toàn bộ endpoint cần đăng
-  nhập). `require_role(*roles)` (dependency factory dùng SAU `get_current_user`)
-  check role thật của user, 403 nếu không đủ quyền. Có thể dựa vào role/
-  `is_active` trả về từ đây cho logic thật.
-- **Rate limit AI chat dùng Redis** — `/ai/chat` và `/ws/chat` cần giới hạn tần suất
-  theo user (xem `docs/API_SPEC.md` mục 8), hiện CHƯA implement, chỉ mới khai báo
-  response `429` trong docs.
-- **WebSocket không xuất hiện trên Swagger UI** — giới hạn của chuẩn OpenAPI, không
-  phải lỗi cấu hình.
-- Route `/orders/admin` (path cố định) được đăng ký TRƯỚC `/orders/{order_id}`
-  trong `app/routers/order.py` — nếu thêm route mới có path cố định xen giữa các
-  route templated, giữ đúng thứ tự này để tránh bị route templated nuốt mất.
-  **`/products/admin`** (task 4.4.1, `app/routers/product.py`) áp dụng ĐÚNG quy
-  tắc này — đăng ký TRƯỚC `/products/{id_or_slug}`.
-- **`frontend/Dockerfile.prod` cần `NEXT_PUBLIC_API_URL` qua `--build-arg` lúc
-  `docker build`, KHÔNG PHẢI lúc `docker run`** (task 2.2.2) — đã tự kiểm chứng:
-  đổi biến này lúc `docker run -e ...` không có tác dụng gì, giá trị lúc build
-  đã bị nhúng cứng vào file JS tĩnh trong `.next/static/`. Hệ quả cho task 7.5.2
-  (Deploy Frontend): đổi API URL giữa các môi trường (staging/production) bắt
-  buộc phải build lại image tương ứng, không thể dùng chung 1 image cho nhiều
-  môi trường như Backend (chỉ cần đổi `--env-file`/biến môi trường lúc chạy).
-- **Cài package Frontend mới (`npm install <gói>`) trên HOST KHÔNG đủ để
-  container `frontend` thấy được gói đó** (đã tự gặp lỗi thật lúc thêm `sonner`
-  task 4.3.1: `next dev` báo "Module not found: Can't resolve 'sonner'" dù
-  `package.json`/`package-lock.json` đã đúng, cài xong trên host, cả 2 khớp
-  nhau) — `docker-compose.yml` mount `frontend_node_modules` là NAMED VOLUME
-  riêng đè lên `/app/node_modules` (cố ý, xem comment ngay tại đó — tránh
-  `node_modules` cài trên host (Windows) đè lên bản Linux đã cài lúc build
-  image), nên named volume này KHÔNG tự đồng bộ theo `npm install` chạy trên
-  host. Sau khi thêm package mới vào `package.json`, PHẢI cài thêm 1 lần NỮA
-  bên trong chính container đang chạy rồi restart để `next dev` nhận layer
-  mới: `docker compose exec frontend npm install` (hoặc `npm install <gói>`
-  nếu chỉ vừa thêm 1 gói) → `docker compose restart frontend`. Bỏ qua bước
-  này sẽ mất thời gian debug lại y hệt lỗi "Module not found" đã gặp - không
-  phải lỗi code, chỉ là node_modules trong container chưa cập nhật.
-- **Upload ảnh sản phẩm (task 3.4.1) lưu LOCAL** (`app/core/storage.py`, thư mục
-  `uploads/`, serve qua `StaticFiles` mount ở `/api/v1/uploads`) — dev có bind
-  mount nên persist thật trên host, nhưng `Dockerfile.prod` KHÔNG có bind mount
-  nên file MẤT khi container recreate — PHẢI chuyển cloud storage (S3/Cloudinary)
-  trước khi deploy thật, xem `docs/KNOWN_TODOS.md` #16.
-- **`POST /orders` dùng `SELECT ... FOR UPDATE` thật** (task 3.4.2/8.2 —
-  `app/services/order_service.py:checkout()`) — khóa từng sản phẩm trong giỏ
-  theo thứ tự `product_id` TĂNG DẦN (tránh deadlock giữa 2 giao dịch checkout
-  đồng thời trùng sản phẩm) + khóa `cart_items` của chính user trước (chặn
-  double-submit). `PUT /orders/{id}/status` (Admin) chỉ chấp nhận transition
-  hợp lệ theo `VALID_STATUS_TRANSITIONS` (state machine cơ bản, cùng file) —
-  400 nếu sai quy tắc, không âm thầm chấp nhận mọi giá trị.
+- **Đọc `docs/API_SPEC.md` trước khi thêm route mới** — nguồn sự thật cho
+  path/method/tag/quyền truy cập. Nếu code lệch spec, đồng bộ lại 1 trong 2
+  phía, đừng để lệch âm thầm.
+- **Không commit `.env` thật** — `.gitignore` (gốc repo VÀ `frontend/`, cả 2
+  sửa ở task 2.4.2) chặn `.env`/`.env.*`, CHỈ cho phép `.env*.example`.
+- **Khi thêm biến môi trường mới**: cập nhật CẢ 2 nơi — (1) `.env.example`
+  tương ứng (root/backend/frontend) + `.env.production.example` nếu khác giá
+  trị production, (2) bảng `docs/ENV_VARIABLES.md`. Bỏ qua 1 trong 2 sẽ lặp
+  lại lệch đã gặp ở `docs/KNOWN_TODOS.md` #6/#7/#8.
+- **`get_current_user` decode JWT THẬT** (`security.py`, task 1.3.3) — verify
+  chữ ký + hạn token bằng `JWT_SECRET_KEY`/`JWT_ALGORITHM` (qua
+  `get_token_payload`, tách để `POST /auth/logout` tái dùng không decode 2
+  lần), CHECK BLACKLIST Redis (`is_token_blacklisted`, key
+  `blacklist:jti:<jti>`, set lúc logout với TTL = thời gian còn lại), rồi load
+  `User` MySQL theo `sub`; 401 nếu thiếu/sai/hết hạn/blacklist/
+  `is_active=False`. Redis lỗi lúc check blacklist → fail-open (có chủ đích —
+  Redis không persist/cluster, fail-closed biến Redis thành SPOF cho mọi
+  endpoint cần đăng nhập). `require_role(*roles)` check role thật, 403 nếu
+  không đủ quyền.
+- **Rate limit AI chat dùng Redis** — `/ai/chat` và `/ws/chat` (xem
+  `docs/API_SPEC.md` mục 8), hiện CHƯA implement, chỉ mới khai báo response
+  `429` trong docs.
+- **WebSocket không xuất hiện trên Swagger UI** — giới hạn chuẩn OpenAPI,
+  không phải lỗi cấu hình.
+- Route `/orders/admin` (path cố định) đăng ký TRƯỚC `/orders/{order_id}`
+  trong `order.py` — route mới có path cố định xen giữa route templated phải
+  giữ thứ tự này. `/products/admin` (task 4.4.1) áp dụng đúng quy tắc, đăng
+  ký TRƯỚC `/products/{id_or_slug}`.
+- **`frontend/Dockerfile.prod` cần `NEXT_PUBLIC_API_URL` qua `--build-arg`
+  lúc `docker build`, KHÔNG PHẢI `docker run`** (task 2.2.2, đã tự kiểm chứng
+  — đổi lúc `docker run -e` vô tác dụng, giá trị build đã nhúng cứng vào JS
+  tĩnh). Hệ quả task 7.5.2: đổi API URL giữa môi trường bắt buộc build lại
+  image, không dùng chung 1 image như Backend (chỉ cần đổi env lúc chạy).
+- **Cài package Frontend mới trên HOST KHÔNG đủ để container `frontend` thấy
+  được** (đã tự gặp lỗi lúc thêm `sonner` task 4.3.1: "Module not found" dù
+  `package.json`/lock đã đúng) — `docker-compose.yml` mount
+  `frontend_node_modules` là NAMED VOLUME riêng đè `/app/node_modules` (cố ý,
+  tránh node_modules Windows đè bản Linux build image), không tự đồng bộ theo
+  `npm install` trên host. Sau khi thêm package mới, PHẢI
+  `docker compose exec frontend npm install` rồi
+  `docker compose restart frontend` — bỏ qua sẽ mất thời gian debug lại lỗi
+  này.
+- **Upload ảnh sản phẩm (task 3.4.1) lưu LOCAL** (`storage.py`, thư mục
+  `uploads/`, serve qua `StaticFiles` ở `/api/v1/uploads`) — dev persist thật
+  qua bind mount, nhưng `Dockerfile.prod` KHÔNG có bind mount nên file MẤT
+  khi container recreate — PHẢI chuyển cloud storage (S3/Cloudinary) trước
+  khi deploy thật, xem `docs/KNOWN_TODOS.md` #16.
+- **`POST /orders` dùng `SELECT ... FOR UPDATE` thật** (task 3.4.2/8.2,
+  `order_service.py:checkout()`) — khóa từng sản phẩm trong giỏ theo
+  `product_id` TĂNG DẦN (tránh deadlock giữa 2 checkout đồng thời) + khóa
+  `cart_items` của user trước (chặn double-submit). `PUT /orders/{id}/status`
+  (Admin) chỉ chấp nhận transition hợp lệ theo `VALID_STATUS_TRANSITIONS` —
+  400 nếu sai, không âm thầm chấp nhận mọi giá trị.
