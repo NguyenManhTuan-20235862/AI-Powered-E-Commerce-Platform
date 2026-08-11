@@ -139,7 +139,10 @@ export function ProductFormModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-foreground/40 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+      {/* bg-black/40 (KHÔNG PHẢI bg-foreground/40) - foreground là CSS custom
+          property trần (var(--color-text)), Tailwind không tạo được utility
+          opacity cho màu dạng này, xem docs/KNOWN_TODOS.md #26. */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
       <div className="relative flex max-h-[90vh] w-full max-w-xl flex-col rounded-xl border border-border bg-surface shadow-warm">
         <div className="flex items-center justify-between border-b border-border p-5">
           <h2 className="font-heading text-lg text-foreground">{isEditMode ? "Sửa sản phẩm" : "Thêm sản phẩm mới"}</h2>
