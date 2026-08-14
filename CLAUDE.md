@@ -343,6 +343,22 @@ thể không còn khớp tab đang xem).
 - **Rate limit AI chat dùng Redis** — `/ai/chat` và `/ws/chat` (xem
   `docs/API_SPEC.md` mục 8), hiện CHƯA implement, chỉ mới khai báo response
   `429` trong docs.
+- **`/ws/chat` xác thực qua JWT ở QUERY PARAM, không phải Authorization
+  header** (task 5.1.1, `authenticate_websocket` trong `ai_chat.py`) —
+  trình duyệt không cho set custom header lúc mở WebSocket handshake, đây
+  là pattern chuẩn cho WS auth. Dùng LẠI `get_token_payload`/
+  `get_current_user` (gọi trực tiếp như hàm thường, không qua `Depends()`
+  kiểu HTTP) — raise `WebSocketException` (4001 token thiếu/sai/hết hạn/
+  blacklist, 4003 đúng token nhưng không phải Customer) TRƯỚC `accept()`.
+  Cả Mongo (pymongo) LẪN Redis (redis-py, qua check blacklist) đều PHẢI bọc
+  `asyncio.to_thread()` khi gọi từ handler async này, đúng note đã có ở
+  `database.py`. **Giới hạn cần biết**: WebSocket API trình duyệt thật
+  KHÔNG đọc được close code 4001/4003 cho kết nối bị từ chối trước
+  `accept()` (luôn báo `1006` chung chung — giới hạn chuẩn WebSocket, không
+  phải bug) — chỉ tool test tầng ASGI (`TestClient`) hoặc client ngoài
+  trình duyệt mới thấy đúng code; frontend cần tự kiểm tra token hết hạn
+  trước khi connect hoặc chấp nhận thông báo lỗi chung chung, xem
+  `docs/KNOWN_TODOS.md` #2.
 - **WebSocket không xuất hiện trên Swagger UI** — giới hạn chuẩn OpenAPI,
   không phải lỗi cấu hình.
 - Route `/orders/admin` (path cố định) đăng ký TRƯỚC `/orders/{order_id}`
