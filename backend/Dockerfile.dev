@@ -45,7 +45,18 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy code SAU cùng - đổi code không làm invalidate cache của các layer install ở trên.
 COPY . .
 
+# chmod +x TRƯỚC EXPOSE/ENTRYPOINT - container này chạy root xuyên suốt (khác
+# Dockerfile.prod), không có ràng buộc thứ tự với USER, nhưng vẫn làm ngay sau
+# COPY để nhất quán với Dockerfile.prod (xem giải thích đầy đủ ở đó).
+RUN chmod +x docker-entrypoint.sh
+
 EXPOSE 8000
+
+# ENTRYPOINT áp dụng "alembic upgrade head" (migration ĐÃ COMMIT, KHÔNG BAO GIỜ
+# tự sinh migration mới) TRƯỚC KHI chạy CMD thật - xem docker-entrypoint.sh để
+# biết logic đầy đủ (kể cả lý do chỉ chạy khi CMD là uvicorn/gunicorn, tránh
+# đua migration với `product-sync-scheduler` dùng lại chính Dockerfile này).
+ENTRYPOINT ["./docker-entrypoint.sh"]
 
 # --reload: uvicorn tự restart khi code thay đổi (qua volume mount ở docker run/
 # docker-compose, xem lệnh test bên dưới) - watchfiles đã có sẵn qua uvicorn[standard].

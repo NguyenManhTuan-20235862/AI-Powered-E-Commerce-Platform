@@ -39,23 +39,113 @@ Dự án môn học / đồ án nhóm — thực hiện trong 8 tuần bởi nh�
 
 ## Cách chạy dự án
 
-> Sẽ được bổ sung chi tiết sau khi hoàn thiện `docker-compose.yml`.
-
-Dự kiến:
+### Cài đặt lần đầu (first setup)
 
 ```bash
-# Clone repo
 git clone <repo-url>
 cd AI-Powered-E-Commerce-Platform
 
-# Chạy toàn bộ hệ thống bằng Docker Compose
+cp .env.example .env                  # MYSQL_ROOT_PASSWORD/MYSQL_DATABASE +
+                                        # MONGO_INITDB_ROOT_USERNAME/PASSWORD + REDIS_PASSWORD
+cp backend/.env.example backend/.env  # JWT_SECRET_KEY + các biến khác Backend cần lúc chạy
+                                        # standalone - 3 biến DATABASE_URL/MONGO_URI/REDIS_URL
+                                        # trong file này bị docker-compose.yml OVERRIDE tự động
+                                        # khi chạy qua compose, KHÔNG cần tự sửa cho khớp.
+
 docker compose up --build
 ```
 
-Các service dự kiến:
-- `backend` — FastAPI, http://localhost:8000
-- `frontend` — Next.js, http://localhost:3000
-- `mysql`, `mongodb`, `redis` — chạy nội bộ trong mạng Docker
+Thứ tự khởi động tự động qua `depends_on: condition: service_healthy`:
+
+```
+MySQL / MongoDB / Redis lên trước (đợi healthy)
+        |
+Backend container start
+        |
+alembic upgrade head   <-- docker-entrypoint.sh, CHỈ apply migration ĐÃ COMMIT
+        |               sẵn trong backend/alembic/versions/, KHÔNG tự sinh
+        |               migration mới, KHÔNG autogenerate
+Backend start (uvicorn --reload)
+        |
+Frontend lên cuối (đợi Backend healthy)
+```
+
+`product-sync-scheduler` cũng chờ MySQL/MongoDB healthy và khởi động song
+song với `backend`, nhưng KHÔNG tự chạy migration (dùng lại
+`docker-entrypoint.sh` của Backend, script chỉ áp dụng `alembic upgrade
+head` khi lệnh khởi động thật sự là `uvicorn`/`gunicorn` — tránh 2 container
+đua nhau update `alembic_version` trên MySQL).
+
+Nếu `alembic upgrade head` thất bại (VD mất kết nối MySQL, migration lỗi),
+container `backend` DỪNG HẲN — không khởi động `uvicorn`/`gunicorn` với
+schema có thể dở dang.
+
+Truy cập: `frontend` — http://localhost:3000, `backend`/Swagger —
+http://localhost:8000/docs, `mysql`/`mongodb`/`redis` vẫn publish port ra
+host (3306/27017/6379) để debug bằng Workbench/Compass/RedisInsight.
+
+### Seed dữ liệu development
+
+Seed vài category/product mẫu + 1 tài khoản admin — TÁCH BIỆT hoàn toàn
+khỏi Alembic migration, KHÔNG tự chạy khi `docker compose up`, chỉ chạy khi
+chủ động gọi:
+
+```bash
+docker compose exec backend python -m scripts.seed_dev_data
+```
+
+An toàn khi chạy lại nhiều lần (idempotent theo `slug`/`email` — dữ liệu đã
+tồn tại thì bỏ qua, không tạo trùng). Password admin được hash bằng đúng cơ
+chế `hash_password` thật của project (bcrypt qua passlib, tái dùng
+`scripts/seed_admin.py`), không lưu plain text.
+
+### MongoDB indexes
+
+Tạo/cập nhật index cho 3 collection (`chat_logs`, `reviews`,
+`product_catalog_sync`) — chạy THỦ CÔNG, không tự động khi backend khởi
+động (có chủ đích, xem giải thích trong chính file script):
+
+```bash
+docker compose exec backend python -m scripts.create_mongo_indexes
+```
+
+`create_index()` của PyMongo idempotent (chạy lại nhiều lần không tạo
+trùng), chỉ cần chạy lại khi thêm/đổi index mới trong script.
+
+### Reset môi trường development
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+`-v` xóa LUÔN named volume MySQL/MongoDB (mất toàn bộ data) — Redis vốn đã
+luôn mất khi `down` (tmpfs, có chủ đích). CHỈ dùng khi thật sự muốn bắt đầu
+lại từ đầu (VD test lại toàn bộ migration từ DB rỗng), KHÔNG dùng trong
+workflow phát triển hàng ngày.
+
+### Tạo migration mới
+
+Quy trình giữ nguyên, KHÔNG đổi bởi việc entrypoint tự `alembic upgrade
+head` lúc Docker start (bước đó CHỈ áp dụng migration đã tồn tại, KHÔNG bao
+giờ tự sinh migration mới):
+
+```bash
+docker compose exec backend alembic revision --autogenerate -m "description"
+```
+
+Developer review file migration sinh ra trong `backend/alembic/versions/` →
+commit/PR → sau khi approve/merge, container `backend` khởi động lần kế
+tiếp sẽ tự `alembic upgrade head` migration này (hoặc chạy tay, xem mục
+dưới).
+
+### Chạy migration thủ công
+
+```bash
+docker compose exec backend alembic upgrade head
+```
+
+Dùng khi cần apply migration ngay mà không muốn restart container `backend`.
 
 ## Phân công
 

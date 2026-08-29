@@ -54,11 +54,21 @@ COPY --from=builder /opt/venv /opt/venv
 # đỡ tốn thêm 1 layer).
 COPY --chown=appuser:appgroup app/ ./app/
 COPY --chown=appuser:appgroup alembic/ ./alembic/
-COPY --chown=appuser:appgroup alembic.ini gunicorn_conf.py ./
+COPY --chown=appuser:appgroup alembic.ini gunicorn_conf.py docker-entrypoint.sh ./
+
+# chmod +x TRƯỚC "USER appuser" bên dưới - PHẢI làm khi còn LÀ root (RUN ở đây
+# vẫn chạy trước lúc đổi USER), tránh PermissionError đã từng gặp thật ở chính
+# Dockerfile.prod này trước đây khi thứ tự bị đảo ngược (đổi USER rồi mới cố
+# chmod/ghi file với quyền appuser bị hạn chế).
+RUN chmod +x docker-entrypoint.sh
 
 USER appuser
 
 EXPOSE 8000
+
+# ENTRYPOINT áp dụng "alembic upgrade head" (migration ĐÃ COMMIT, KHÔNG BAO GIỜ
+# tự sinh migration mới) TRƯỚC KHI chạy CMD thật - xem docker-entrypoint.sh.
+ENTRYPOINT ["./docker-entrypoint.sh"]
 
 # Gunicorn quản lý N Uvicorn worker (xem công thức + giải thích timeout trong
 # gunicorn_conf.py) - khác hẳn "uvicorn --reload" của dev: không tự restart khi
