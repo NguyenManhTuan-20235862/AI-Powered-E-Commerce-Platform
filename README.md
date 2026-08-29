@@ -3,7 +3,7 @@
 Nền tảng thương mại điện tử tích hợp AI Agent, hỗ trợ tư vấn sản phẩm, tìm kiếm thông minh
 và trải nghiệm mua sắm theo thời gian thực (real-time) thông qua WebSocket/SSE.
 
-Dự án môn học / đồ án nhóm — thực hiện trong 8 tuần bởi nhóm 2 thành viên.
+Dự án cá nhân (solo) — thực hiện trong 13 tuần.
 
 ## Mục tiêu
 
@@ -146,13 +146,6 @@ docker compose exec backend alembic upgrade head
 ```
 
 Dùng khi cần apply migration ngay mà không muốn restart container `backend`.
-
-## Phân công
-
-| Thành viên | Vai trò |
-|---|---|
-| Thành viên A | Backend (FastAPI, AI Agent, cơ sở dữ liệu) |
-| Thành viên B | Frontend (Next.js, giao diện, tích hợp API/WebSocket) |
 
 ## Quy ước Git
 
