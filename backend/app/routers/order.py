@@ -22,6 +22,7 @@ from app.models.user import User, UserRole
 from app.schemas.common import APIResponse, PaginatedResponse, PaginationParams, paginated_response, success_response
 from app.schemas.order import OrderCreate, OrderRead, OrderStatusUpdate
 from app.services import order_service
+from app.services.notification_service import publish_order_status_update
 from app.services.product_service import PRODUCT_LIST_CACHE_PREFIX
 
 router = APIRouter(prefix="/orders", tags=["Order"])
@@ -230,4 +231,8 @@ def update_order_status(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     invalidate_by_prefix(redis_client, PRODUCT_LIST_CACHE_PREFIX)
+    # PUBLISH cho SSE (task 5.2.1) - CHỈ tới đây khi update_order_status() ở
+    # trên đã db.commit() thành công (không rơi vào nhánh except) - không
+    # publish sự kiện cho 1 lần đổi trạng thái thất bại.
+    publish_order_status_update(redis_client, user_id=order.user_id, order_id=order.id, new_status=order.status)
     return success_response(data=order_service.to_order_read_single(db, order), message="Đã cập nhật trạng thái đơn hàng")

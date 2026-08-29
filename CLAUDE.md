@@ -299,10 +299,35 @@ riêng, đúng quy mô đồ án) — hủy xong gọi lại `onCancelled` (cha
 `fetchOrders()` lại toàn bộ, KHÔNG tự patch state cục bộ vì đơn vừa hủy có
 thể không còn khớp tab đang xem).
 
+**`GET /notifications/orders/stream`** (SSE, task 5.2.1) — xác thực qua JWT ở
+query param (`?token=...`), cùng lý do/cách WebSocket (`EventSource` cũng
+không cho set custom header) nhưng ĐƠN GIẢN HƠN: lỗi auth raise thẳng
+`HTTPException(401/403)` bình thường (xảy ra ở tầng dependency, TRƯỚC khi
+`StreamingResponse` được tạo), không cần class exception riêng. `EventSource`
+cũng KHÔNG đọc được status code của lần TỰ ĐỘNG reconnect (KNOWN_TODOS #28) —
+Frontend (task 5.2.2) cần tự kiểm tra token hết hạn trước khi connect hoặc
+chấp nhận thông báo lỗi chung chung, cùng pattern `useChatSocket.ts`.
+
+**Redis Pub/Sub cho SSE** (task 5.2.1) — LẦN ĐẦU TIÊN dự án dùng Redis cho
+pub/sub (trước đó CHỈ cache/session/blacklist). Cần thiết vì Backend chạy
+Gunicorn NHIỀU worker ở production (`_WORKERS_CAP=4`, task 2.1.2): Admin đổi
+trạng thái đơn hàng (`PUT /orders/{id}/status`) có thể được worker A xử lý,
+trong khi customer giữ kết nối SSE ở worker B — 2 process riêng biệt, CHỈ
+Redis (hạ tầng ngoài process) mới truyền được sự kiện qua worker khác; đây
+KHÔNG phải edge case hiếm (round-robin 4 worker khiến phần lớn request rơi
+vào worker khác). Channel RIÊNG từng user
+(`order_updates:{user_id}`, `app/services/notification_service.py`) — PUBLISH
+fire-and-forget (không phải hàng đợi persistent, mất event nếu user không
+đang mở SSE đúng lúc là chấp nhận được — `GET /orders/{id}` vẫn là nguồn sự
+thật đầy đủ). Middleware log request (`app/core/middleware.py`) loại trừ
+path `/api/v1/notifications/` khỏi đo `duration_ms` — số đo theo cách cũ vô
+nghĩa cho kết nối mở vô thời hạn (đóng KNOWN_TODOS #3).
+
 **Luồng dữ liệu chính**:
 - **MySQL** (qua SQLAlchemy): dữ liệu quan hệ — User, Product, Category, Cart, Order.
 - **MongoDB** (qua PyMongo): dữ liệu phi cấu trúc — Chat log (AI Agent), Review.
-- **Redis**: cache, session/token blacklist khi logout, **rate limit cho AI chat**
+- **Redis**: cache, session/token blacklist khi logout, Pub/Sub cho SSE cập
+  nhật trạng thái đơn hàng (task 5.2.1), **rate limit cho AI chat**
   (`/ai/chat`, `/ws/chat` — xem `docs/API_SPEC.md` mục 8).
 
 ## Coding Conventions
