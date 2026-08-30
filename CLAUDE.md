@@ -157,9 +157,30 @@ code suy ra được (quyết định/gap phát sinh) liệt kê dưới đây:
 
 - Backend: category service CHỈ `list_categories()` thật (task 4.2.1, phục
   vụ filter trang catalog) — CRUD category (POST/PUT/DELETE) vẫn placeholder;
-  dashboard/payment vẫn placeholder (chưa tới task tương ứng).
+  payment vẫn placeholder (chưa tới task tương ứng).
 - Frontend: `app/admin/` là segment THẬT (không phải route group), tránh
   trùng URL với `(customer)/products`.
+
+**`GET /admin/dashboard/{summary,revenue,top-products}`** (task 5.3.1,
+`app/services/dashboard_service.py`) — "realtime" trong tên task 5.3 CHỈ có
+nghĩa Admin fetch số liệu mới nhất lúc mở trang/bấm refresh, KHÔNG đẩy qua
+SSE/WebSocket (đã xác nhận trước khi code — dữ liệu tổng hợp, không phải 1
+sự kiện đơn lẻ như trạng thái đơn hàng ở 5.1/5.2). Quyết định nghiệp vụ quan
+trọng: **doanh thu loại trừ CHỈ đơn `cancelled`** (tính cả
+`pending`/`confirmed`/`shipping`/`delivered`) — nhưng **`total_orders` đếm
+CẢ đơn `cancelled`** (chỉ số hoạt động, khác doanh thu, xem
+`REVENUE_ELIGIBLE_STATUSES` so với query đếm `total_orders`). `new_users`
+CHỈ đếm `role=customer` (loại `admin`). Mặc định 30 ngày gần nhất nếu không
+truyền `date_from`/`date_to`. `revenue` trả mảng LIÊN TỤC (điền 0 cho
+ngày/tuần/tháng không phát sinh đơn — cần cho Chart.js không bị "nhảy cóc"
+trục thời gian). `top-products` mặc định sắp theo SỐ LƯỢNG bán
+(`sort_by=quantity`, đổi được sang `revenue`) — nhóm theo `product_id`,
+`name` trả về là tên HIỆN TẠI join bảng `products` (KHÔNG dùng snapshot
+`order_items.product_name` — hợp lý hơn cho báo cáo Admin xem đúng sản phẩm
+đang bán, khác nguyên tắc snapshot bất biến dùng cho hóa đơn). Cache Redis
+qua `get_or_set_cache` có sẵn, TTL 300s (5 phút) — **KHÔNG active-invalidate**
+khi đơn hàng đổi trạng thái (khác `product_service.py` cho CRUD sản phẩm) -
+đã xác nhận dữ liệu thống kê không cần tức thời, chấp nhận độ trễ tới 5 phút.
 
 `lib/axios.ts` (interceptor gắn JWT, CLIENT), `lib/api-server.ts` (fetch phía
 SERVER, task 4.2.1 — xem `API_INTERNAL_URL` bên dưới), `lib/auth.ts` (token
