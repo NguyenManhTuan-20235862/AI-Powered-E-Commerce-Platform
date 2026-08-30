@@ -90,10 +90,12 @@ def test_customer_token_on_admin_only_endpoint_returns_403(client: TestClient, d
 
 
 def test_admin_token_on_admin_only_endpoint_passes_role_check(client: TestClient, db: Session) -> None:
+    """`GET /users` (task Quản lý người dùng Admin, implement thật) không còn
+    là placeholder 501 - trả 200 thật (role check pass, danh sách user thật)."""
     user = _create_user(db, role=UserRole.admin)
     token = create_access_token(user_id=user.id, role=user.role.value)
     response = client.get("/api/v1/users", headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 501
+    assert response.status_code == 200
 
 
 def test_admin_token_on_customer_only_endpoint_returns_403(client: TestClient, db: Session) -> None:
