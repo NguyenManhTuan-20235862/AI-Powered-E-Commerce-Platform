@@ -3,12 +3,35 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { OrderCard } from "@/components/order/OrderCard";
 import { OrderStatusFilter } from "@/components/order/OrderStatusFilter";
+import { useOrderStatusStream } from "@/hooks/useOrderStatusStream";
 import { api } from "@/lib/axios";
 import type { ApiResponse, PaginatedResponse } from "@/types/common";
+import type { OrderStatusEvent, OrderStreamStatus } from "@/types/notification";
 import type { Order, OrderStatus } from "@/types/order";
+
+// Nhãn hiển thị cho toast - cùng nội dung `OrderStatusBadge.tsx`/
+// `OrderStatusFilter.tsx` (2 file đó cũng tự khai map riêng, không có 1 nguồn
+// chung sẵn có trong dự án - giữ đúng pattern đã có, không thêm trừu tượng
+// mới cho 1 map 5 dòng).
+const STATUS_LABEL: Record<OrderStatus, string> = {
+  pending: "Chờ xác nhận",
+  confirmed: "Đã xác nhận",
+  shipping: "Đang giao",
+  delivered: "Đã giao",
+  cancelled: "Đã hủy",
+};
+
+const STREAM_BANNER_LABEL: Record<OrderStreamStatus, string | null> = {
+  idle: null,
+  connecting: null,
+  open: null,
+  reconnecting: "Mất kết nối cập nhật realtime, đang thử kết nối lại...",
+  "retry-exhausted": "Mất kết nối cập nhật realtime.",
+};
 
 /**
  * Client Component (task 4.3.3) - CSR thay vì SSR: trang này cần tương tác
@@ -53,6 +76,25 @@ export function OrdersView() {
     fetchOrders();
   }, [fetchOrders]);
 
+  // SSE `/notifications/orders/stream` (task 5.2.2) - CHỈ mở trong lúc đứng
+  // ở trang này (page-scoped, xác nhận trước khi code) - nhận sự kiện thì
+  // gọi LẠI `fetchOrders()` đã có (KHÔNG tự patch state cục bộ) - cùng lý do
+  // `onCancelled` ở `OrderCard`: đơn vừa đổi trạng thái có thể không còn
+  // khớp tab `?status=` đang lọc, refetch đảm bảo danh sách luôn đúng thay
+  // vì để lại dòng lệch trạng thái.
+  const handleOrderStatusEvent = useCallback(
+    (event: OrderStatusEvent) => {
+      toast.info(`Đơn hàng #${event.order_id}: ${STATUS_LABEL[event.status]}`);
+      fetchOrders();
+    },
+    [fetchOrders],
+  );
+
+  const { status: streamStatus, retryNow: retryStream } = useOrderStatusStream({
+    enabled: true,
+    onOrderStatus: handleOrderStatusEvent,
+  });
+
   function goToPage(nextPage: number) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("page", String(nextPage));
@@ -63,6 +105,17 @@ export function OrdersView() {
     <div className="mx-auto max-w-5xl px-4 py-10">
       <h1 className="mb-2 font-heading text-2xl text-foreground md:text-3xl">Đơn hàng của tôi</h1>
       <p className="mb-6 text-foreground-muted">Theo dõi và quản lý các đơn hàng bạn đã đặt.</p>
+
+      {STREAM_BANNER_LABEL[streamStatus] && (
+        <div className="mb-6 flex items-center justify-between gap-2 rounded-lg bg-error-container px-4 py-3 text-error">
+          <p className="text-sm font-semibold">{STREAM_BANNER_LABEL[streamStatus]}</p>
+          {streamStatus === "retry-exhausted" && (
+            <button type="button" onClick={retryStream} className="shrink-0 text-sm font-semibold underline hover:opacity-80">
+              Kết nối lại
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="mb-6">
         <OrderStatusFilter />
