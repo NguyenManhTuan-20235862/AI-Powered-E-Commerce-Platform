@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { extractApiErrorMessage } from "@/lib/api-error";
 import { api } from "@/lib/axios";
+import { formatPaginationRange } from "@/lib/format";
 import type { ApiResponse } from "@/types/common";
 import type { AdminUser, UserRole } from "@/types/user";
 
@@ -70,6 +71,8 @@ export function UserTable({
   onStatusChange,
   page,
   totalPages,
+  total,
+  pageSize,
   onPageChange,
   onChanged,
 }: {
@@ -83,10 +86,13 @@ export function UserTable({
   onStatusChange: (value: "" | "true" | "false") => void;
   page: number;
   totalPages: number;
+  total: number;
+  pageSize: number;
   onPageChange: (page: number) => void;
   onChanged: () => void;
 }) {
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const { start, end } = formatPaginationRange(page, pageSize, total);
 
   async function handleToggleActive(user: AdminUser) {
     if (user.is_active) {
@@ -219,27 +225,34 @@ export function UserTable({
           </tbody>
         </table>
 
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-3 border-t border-border px-4 py-3">
-            <button
-              type="button"
-              onClick={() => onPageChange(page - 1)}
-              disabled={page <= 1}
-              className="rounded-lg border border-border px-4 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Trang trước
-            </button>
+        {!isLoading && users.length > 0 && (
+          <div className="flex flex-col items-center justify-between gap-2 border-t border-border px-4 py-3 sm:flex-row">
             <span className="text-sm text-foreground-muted">
-              Trang {page}/{totalPages}
+              Hiển thị {start}-{end} trên tổng {total} người dùng
             </span>
-            <button
-              type="button"
-              onClick={() => onPageChange(page + 1)}
-              disabled={page >= totalPages}
-              className="rounded-lg border border-border px-4 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Trang sau
-            </button>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => onPageChange(page - 1)}
+                  disabled={page <= 1}
+                  className="rounded-lg border border-border px-4 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Trang trước
+                </button>
+                <span className="text-sm text-foreground-muted">
+                  Trang {page}/{totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onPageChange(page + 1)}
+                  disabled={page >= totalPages}
+                  className="rounded-lg border border-border px-4 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Trang sau
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

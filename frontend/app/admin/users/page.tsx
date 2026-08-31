@@ -26,6 +26,8 @@ export default function AdminUsersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [role, setRole] = useState<UserRole | "">("");
@@ -41,6 +43,8 @@ export default function AdminUsersPage() {
       const { data } = await api.get<ApiResponse<PaginatedResponse<AdminUser>>>("/users", { params });
       setUsers(data.data.items);
       setTotalPages(data.data.total_pages);
+      setTotal(data.data.total);
+      setPageSize(data.data.page_size);
     } catch {
       toast.error("Không tải được danh sách người dùng.");
     } finally {
@@ -90,6 +94,8 @@ export default function AdminUsersPage() {
         onStatusChange={handleStatusChange}
         page={page}
         totalPages={totalPages}
+        total={total}
+        pageSize={pageSize}
         onPageChange={setPage}
         onChanged={fetchUsers}
       />

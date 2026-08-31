@@ -59,6 +59,8 @@ const noopProps = {
   onStatusChange: vi.fn(),
   page: 1,
   totalPages: 1,
+  total: 3,
+  pageSize: 10,
   onPageChange: vi.fn(),
   onChanged: vi.fn(),
 };
@@ -77,6 +79,22 @@ describe("UserTable (Quản lý người dùng Admin) - badge + hành động kh
     expect(table.getAllByText("Customer")).toHaveLength(2);
     expect(table.getAllByText("Đang hoạt động")).toHaveLength(2); // admin + activeCustomer
     expect(table.getByText("Đã khóa")).toBeInTheDocument();
+  });
+
+  it("hiện đúng 'Hiển thị X-Y trên tổng Z người dùng' ở trang cuối, end KHÔNG vượt quá total", () => {
+    // page 3, pageSize 2, total 5 -> trang cuối chỉ có 1 bản ghi (5), end
+    // PHẢI chặn ở 5 (min(3*2, 5)), không phải 6.
+    render(
+      <UserTable
+        {...noopProps}
+        users={[adminUser, activeCustomer, lockedCustomer]}
+        page={3}
+        pageSize={2}
+        total={5}
+        totalPages={3}
+      />,
+    );
+    expect(screen.getByText("Hiển thị 5-5 trên tổng 5 người dùng")).toBeInTheDocument();
   });
 
   it("ẨN nút Khóa/Mở khóa ở hàng role=admin - chỉ hiện dấu '—'", () => {
