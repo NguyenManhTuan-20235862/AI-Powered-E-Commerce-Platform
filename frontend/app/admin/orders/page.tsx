@@ -29,6 +29,8 @@ export default function AdminOrdersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<OrderStatus | "">("");
@@ -42,6 +44,8 @@ export default function AdminOrdersPage() {
       const { data } = await api.get<ApiResponse<PaginatedResponse<Order>>>("/orders/admin", { params });
       setOrders(data.data.items);
       setTotalPages(data.data.total_pages);
+      setTotal(data.data.total);
+      setPageSize(data.data.page_size);
     } catch {
       toast.error("Không tải được danh sách đơn hàng.");
     } finally {
@@ -84,6 +88,8 @@ export default function AdminOrdersPage() {
         onStatusChange={handleStatusChange}
         page={page}
         totalPages={totalPages}
+        total={total}
+        pageSize={pageSize}
         onPageChange={setPage}
         onChanged={fetchOrders}
       />

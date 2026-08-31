@@ -31,6 +31,8 @@ export default function AdminProductsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -46,6 +48,8 @@ export default function AdminProductsPage() {
       const { data } = await api.get<ApiResponse<PaginatedResponse<Product>>>("/products/admin", { params });
       setProducts(data.data.items);
       setTotalPages(data.data.total_pages);
+      setTotal(data.data.total);
+      setPageSize(data.data.page_size);
     } catch {
       toast.error("Không tải được danh sách sản phẩm.");
     } finally {
@@ -118,6 +122,8 @@ export default function AdminProductsPage() {
         categories={categories}
         page={page}
         totalPages={totalPages}
+        total={total}
+        pageSize={pageSize}
         onPageChange={setPage}
         onEdit={openEditModal}
         onChanged={fetchProducts}

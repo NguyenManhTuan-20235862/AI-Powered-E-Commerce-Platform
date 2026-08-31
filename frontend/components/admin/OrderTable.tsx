@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import { OrderStatusBadge } from "@/components/order/OrderStatusBadge";
 import { OrderStatusSelect } from "@/components/admin/OrderStatusSelect";
-import { formatPriceVnd } from "@/lib/format";
+import { formatPaginationRange, formatPriceVnd } from "@/lib/format";
 import type { Order, OrderStatus } from "@/types/order";
 
 const STATUS_FILTER_OPTIONS: { value: OrderStatus | ""; label: string }[] = [
@@ -49,6 +49,8 @@ export function OrderTable({
   onStatusChange,
   page,
   totalPages,
+  total,
+  pageSize,
   onPageChange,
   onChanged,
 }: {
@@ -60,9 +62,12 @@ export function OrderTable({
   onStatusChange: (value: OrderStatus | "") => void;
   page: number;
   totalPages: number;
+  total: number;
+  pageSize: number;
   onPageChange: (page: number) => void;
   onChanged: () => void;
 }) {
+  const { start, end } = formatPaginationRange(page, pageSize, total);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4 sm:flex-row">
@@ -161,27 +166,34 @@ export function OrderTable({
           </tbody>
         </table>
 
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-3 border-t border-border px-4 py-3">
-            <button
-              type="button"
-              onClick={() => onPageChange(page - 1)}
-              disabled={page <= 1}
-              className="rounded-lg border border-border px-4 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Trang trước
-            </button>
+        {!isLoading && orders.length > 0 && (
+          <div className="flex flex-col items-center justify-between gap-2 border-t border-border px-4 py-3 sm:flex-row">
             <span className="text-sm text-foreground-muted">
-              Trang {page}/{totalPages}
+              Hiển thị {start}-{end} trên tổng {total} đơn hàng
             </span>
-            <button
-              type="button"
-              onClick={() => onPageChange(page + 1)}
-              disabled={page >= totalPages}
-              className="rounded-lg border border-border px-4 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Trang sau
-            </button>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => onPageChange(page - 1)}
+                  disabled={page <= 1}
+                  className="rounded-lg border border-border px-4 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Trang trước
+                </button>
+                <span className="text-sm text-foreground-muted">
+                  Trang {page}/{totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onPageChange(page + 1)}
+                  disabled={page >= totalPages}
+                  className="rounded-lg border border-border px-4 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Trang sau
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

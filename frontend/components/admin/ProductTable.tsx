@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { extractApiErrorMessage } from "@/lib/api-error";
 import { api } from "@/lib/axios";
-import { formatPriceVnd, resolveProductImageUrlClient } from "@/lib/format";
+import { formatPaginationRange, formatPriceVnd, resolveProductImageUrlClient } from "@/lib/format";
 import type { Category } from "@/types/category";
 import type { Product } from "@/types/product";
 
@@ -33,6 +33,8 @@ export function ProductTable({
   categories,
   page,
   totalPages,
+  total,
+  pageSize,
   onPageChange,
   onEdit,
   onChanged,
@@ -46,10 +48,13 @@ export function ProductTable({
   categories: Category[];
   page: number;
   totalPages: number;
+  total: number;
+  pageSize: number;
   onPageChange: (page: number) => void;
   onEdit: (product: Product) => void;
   onChanged: () => void;
 }) {
+  const { start, end } = formatPaginationRange(page, pageSize, total);
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
   async function handleToggleActive(product: Product) {
@@ -205,27 +210,34 @@ export function ProductTable({
           </tbody>
         </table>
 
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-3 border-t border-border px-4 py-3">
-            <button
-              type="button"
-              onClick={() => onPageChange(page - 1)}
-              disabled={page <= 1}
-              className="rounded-lg border border-border px-4 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Trang trước
-            </button>
+        {!isLoading && products.length > 0 && (
+          <div className="flex flex-col items-center justify-between gap-2 border-t border-border px-4 py-3 sm:flex-row">
             <span className="text-sm text-foreground-muted">
-              Trang {page}/{totalPages}
+              Hiển thị {start}-{end} trên tổng {total} sản phẩm
             </span>
-            <button
-              type="button"
-              onClick={() => onPageChange(page + 1)}
-              disabled={page >= totalPages}
-              className="rounded-lg border border-border px-4 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Trang sau
-            </button>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => onPageChange(page - 1)}
+                  disabled={page <= 1}
+                  className="rounded-lg border border-border px-4 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Trang trước
+                </button>
+                <span className="text-sm text-foreground-muted">
+                  Trang {page}/{totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onPageChange(page + 1)}
+                  disabled={page >= totalPages}
+                  className="rounded-lg border border-border px-4 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Trang sau
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
