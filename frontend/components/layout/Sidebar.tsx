@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: "/admin/categories", label: "Danh mục" },
   { href: "/admin/products", label: "Quản lý sản phẩm" },
   { href: "/admin/orders", label: "Quản lý đơn hàng" },
+  { href: "/admin/users", label: "Người dùng" },
 ];
 
 /** Điều hướng Admin - responsive: cột cố định trên desktop (md+), drawer trượt ra trên mobile/tablet. */
