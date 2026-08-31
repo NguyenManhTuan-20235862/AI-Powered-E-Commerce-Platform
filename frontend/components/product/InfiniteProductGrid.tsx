@@ -109,6 +109,15 @@ export function InfiniteProductGrid({
       </div>
 
       <div className="flex flex-col items-center gap-2 py-4">
+        {/* Chỉ báo tiến trình (task 4.5.2) - LUÔN hiện 1 dòng duy nhất, đổi
+            nội dung theo trạng thái thay vì tách riêng 2 dòng "đang tải"/"đã
+            xong" chồng nhau: còn trang sau -> "Đang hiển thị {đã tải}/
+            {tổng}"; hết trang -> "Đã hiển thị tất cả {tổng}" (giữ nguyên
+            message cũ). `products.length` là số ĐÃ TẢI THỰC TẾ (không phải
+            hằng số) - tự đúng dù trang cuối trả ít hơn PAGE_SIZE. */}
+        <p className="text-sm text-foreground-muted">
+          {hasMore ? `Đang hiển thị ${products.length}/${initialTotal} sản phẩm` : `Đã hiển thị tất cả ${initialTotal} sản phẩm`}
+        </p>
         {isLoadingMore && (
           <span className="flex items-center gap-2 text-sm text-foreground-secondary">
             <span
@@ -126,9 +135,6 @@ export function InfiniteProductGrid({
           >
             Tải thêm sản phẩm thất bại - Thử lại
           </button>
-        )}
-        {!hasMore && !loadError && (
-          <p className="text-sm text-foreground-muted">Đã hiển thị tất cả {initialTotal} sản phẩm</p>
         )}
       </div>
 

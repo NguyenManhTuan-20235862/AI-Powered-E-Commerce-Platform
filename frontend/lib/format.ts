@@ -9,6 +9,17 @@ export function formatPriceVnd(price: string): string {
   return `${new Intl.NumberFormat("vi-VN").format(value)} ₫`;
 }
 
+// Tính khoảng bản ghi đang hiển thị (VD trang 2, pageSize 20, total 45 ->
+// {start: 21, end: 40}) - dùng chung cho dòng "Hiển thị X-Y trên tổng Z" ở
+// footer phân trang các bảng Admin (Product/Order...). `end` chặn KHÔNG vượt
+// quá `total` (trang cuối thường có ít bản ghi hơn 1 trang đầy đủ).
+export function formatPaginationRange(page: number, pageSize: number, total: number): { start: number; end: number } {
+  if (total <= 0) return { start: 0, end: 0 };
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, total);
+  return { start, end };
+}
+
 // product.image_url (nếu có) là PATH TƯƠNG ĐỐI Backend trả về (VD
 // "/api/v1/uploads/products/xxx.jpg", xem backend/app/core/storage.py) -
 // PHẢI ghép với 1 origin gọi được Backend để dùng làm <Image> src.

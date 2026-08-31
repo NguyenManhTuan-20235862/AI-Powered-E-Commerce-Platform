@@ -101,6 +101,7 @@ describe("InfiniteProductGrid - logic tải thêm (task 4.5.2)", () => {
     expect(screen.getByText("Sản phẩm 1")).toBeInTheDocument();
     expect(screen.getByText("Sản phẩm 2")).toBeInTheDocument();
     expect(observeMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Đang hiển thị 2/5 sản phẩm")).toBeInTheDocument();
     expect(screen.queryByText(/Đã hiển thị tất cả/)).not.toBeInTheDocument();
   });
 
@@ -124,6 +125,9 @@ describe("InfiniteProductGrid - logic tải thêm (task 4.5.2)", () => {
     expect(screen.getByText("Sản phẩm 4")).toBeInTheDocument();
     // Sản phẩm trang 1 vẫn còn - nối thêm, không thay thế.
     expect(screen.getByText("Sản phẩm 1")).toBeInTheDocument();
+    // Chỉ báo tiến trình cập nhật đúng SỐ ĐÃ TẢI THỰC TẾ (2 -> 4), không
+    // phải hằng số cố định theo PAGE_SIZE.
+    expect(screen.getByText("Đang hiển thị 4/5 sản phẩm")).toBeInTheDocument();
 
     expect(apiGetMock).toHaveBeenCalledWith(
       "/products",
@@ -177,6 +181,9 @@ describe("InfiniteProductGrid - logic tải thêm (task 4.5.2)", () => {
 
     fireIntersection();
     await waitFor(() => expect(screen.getByText("Đã hiển thị tất cả 2 sản phẩm")).toBeInTheDocument());
+    // Chỉ 1 dòng duy nhất - "Đang hiển thị X/Y" PHẢI biến mất khi đã chuyển
+    // sang "Đã hiển thị tất cả", không hiện chồng cả 2.
+    expect(screen.queryByText(/Đang hiển thị/)).not.toBeInTheDocument();
 
     apiGetMock.mockClear();
     fireIntersection();
