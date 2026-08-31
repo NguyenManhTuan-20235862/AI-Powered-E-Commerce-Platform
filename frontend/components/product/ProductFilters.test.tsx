@@ -25,8 +25,8 @@ vi.mock("next/navigation", () => ({
 }));
 
 const categories: Category[] = [
-  { id: 1, name: "Gốm sứ", description: null },
-  { id: 2, name: "Vải dệt", description: null },
+  { id: 1, name: "Gốm sứ", slug: "gom-su", description: null, parent_id: null, created_at: "2026-08-01T00:00:00" },
+  { id: 2, name: "Vải dệt", slug: "vai-det", description: null, parent_id: null, created_at: "2026-08-01T00:00:00" },
 ];
 
 describe("ProductFilters - đồng bộ URL -> widget (task 4.2.3)", () => {
