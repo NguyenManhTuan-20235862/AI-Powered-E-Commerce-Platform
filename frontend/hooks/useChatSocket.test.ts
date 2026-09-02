@@ -9,10 +9,8 @@ import {
 } from "@/hooks/useChatSocket";
 
 // task 5.1.2 - test logic backoff/reconnect của useChatSocket.ts (không cần
-// browser/backend thật cho phần này, cùng tinh thần
-// InfiniteProductGrid.test.tsx cho IntersectionObserver) - tự mock
-// WebSocket toàn cục + lib/auth, dùng fake timer để kiểm tra CHÍNH XÁC thời
-// điểm mỗi lần thử kết nối lại.
+// browser/backend thật cho phần này) - tự mock WebSocket toàn cục + lib/auth,
+// dùng fake timer để kiểm tra CHÍNH XÁC thời điểm mỗi lần thử kết nối lại.
 
 vi.mock("@/lib/auth", () => ({
   getToken: () => "fake-token",
