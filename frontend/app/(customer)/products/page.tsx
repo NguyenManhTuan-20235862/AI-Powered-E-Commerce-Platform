@@ -1,5 +1,6 @@
-import { InfiniteProductGrid } from "@/components/product/InfiniteProductGrid";
 import { ProductFilters } from "@/components/product/ProductFilters";
+import { ProductGrid } from "@/components/product/ProductGrid";
+import { ProductPaginationUrlSync } from "@/components/product/ProductPagination";
 import { SortDropdown } from "@/components/product/SortDropdown";
 import { fetchApi } from "@/lib/api-server";
 import type { Category } from "@/types/category";
@@ -7,8 +8,9 @@ import type { PaginatedResponse } from "@/types/common";
 import type { Product } from "@/types/product";
 
 // 12 (3 cột x 4 hàng ở desktop) - khớp bố cục lưới đã thiết kế (Stitch), thay
-// vì mặc định 20 của Backend (PaginationParams.page_size). Cũng là số lượng
-// mỗi lần "tải thêm" của infinity-scroll (task 4.5.2, xem InfiniteProductGrid).
+// vì mặc định 20 của Backend (PaginationParams.page_size). Giữ nguyên số này
+// từ lúc còn infinite-scroll (task 4.5.2) - chuyển sang phân trang số
+// (thay thế hoàn toàn infinite-scroll) không có lý do gì để đổi.
 const PAGE_SIZE = 12;
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -18,12 +20,8 @@ function getParam(searchParams: SearchParams, key: string): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-// Snapshot filter/sort/search hiện tại dạng object phẳng (KHÔNG có `page` -
-// task 4.5.2 bỏ hẳn `page` khỏi URL, xem InfiniteProductGrid) - dùng CHUNG
-// cho cả (1) query SSR trang 1 và (2) truyền xuống InfiniteProductGrid (Client
-// Component) làm tham số cho mọi lần "tải thêm" sau đó, đảm bảo luôn khớp
-// đúng filter đang áp dụng. Trả object phẳng (không phải URLSearchParams) vì
-// URLSearchParams không serialize được qua ranh giới Server -> Client Component.
+// Snapshot filter/sort/search hiện tại (KHÔNG gồm `page` - đọc riêng, xem
+// `ProductsPage` bên dưới) dùng để build query gọi `GET /products` phía SSR.
 function buildProductsQueryParams(searchParams: SearchParams): Record<string, string> {
   const params: Record<string, string> = {};
 
@@ -57,12 +55,17 @@ export default async function ProductsPage({
 }) {
   const resolvedSearchParams = await searchParams;
   const queryParams = buildProductsQueryParams(resolvedSearchParams);
-  // Key ép React remount InfiniteProductGrid mỗi khi filter/sort/search đổi -
-  // xem docstring InfiniteProductGrid để biết lý do chọn remount thay vì tự
-  // đồng bộ state qua useEffect.
-  const queryKey = new URLSearchParams(queryParams).toString();
+
+  // `page` từ URL - KHÔNG hợp lệ (thiếu/NaN/<1) mặc định về 1. KHÔNG tự clamp
+  // theo `total_pages` (chưa biết được trước khi gọi API) - trang vượt quá số
+  // trang thật cứ gửi thẳng xuống Backend, `GET /products` trả `items` rỗng
+  // (offset vượt quá dữ liệu) và `ProductGrid` đã có sẵn thông báo "Không tìm
+  // thấy sản phẩm phù hợp" cho trường hợp rỗng - không cần logic riêng.
+  const pageParam = getParam(resolvedSearchParams, "page");
+  const page = Math.max(1, Number(pageParam) || 1);
 
   const productsQuery = new URLSearchParams(queryParams);
+  productsQuery.set("page", String(page));
   productsQuery.set("page_size", String(PAGE_SIZE));
 
   let productsData: PaginatedResponse<Product> | null = null;
@@ -90,20 +93,19 @@ export default async function ProductsPage({
           </div>
         ) : (
           <>
-            <div className="flex flex-col items-start justify-between gap-3 rounded-lg bg-surface p-3 sm:flex-row sm:items-center">
+            {/* id neo cho cuộn mượt (ProductPaginationUrlSync) khi đổi trang -
+                cuộn tới đúng đầu khu vực danh sách, KHÔNG PHẢI đầu trang toàn
+                bộ (giữ Header/sidebar filter nguyên vị trí nhìn thấy). */}
+            <div id="product-grid-top" className="flex flex-col items-start justify-between gap-3 rounded-lg bg-surface p-3 sm:flex-row sm:items-center">
               <p className="text-sm text-foreground-secondary">
                 <span className="font-bold text-foreground">{productsData.total}</span> sản phẩm
               </p>
               <SortDropdown />
             </div>
 
-            <InfiniteProductGrid
-              key={queryKey}
-              initialProducts={productsData.items}
-              initialTotal={productsData.total}
-              initialTotalPages={productsData.total_pages}
-              queryParams={queryParams}
-            />
+            <ProductGrid products={productsData.items} />
+
+            <ProductPaginationUrlSync currentPage={productsData.page} totalPages={productsData.total_pages} />
           </>
         )}
       </section>
