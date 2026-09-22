@@ -16,6 +16,10 @@ export interface InventoryAdjustment {
   reason: InventoryReason;
   note: string | null;
   admin_id: number;
+  // Tên Admin thực hiện điều chỉnh (JOIN batch từ `users`, KHÔNG phải cột
+  // lưu sẵn trên `inventory_adjustments`) - task "Hoàn thiện quản trị sản
+  // phẩm, danh mục và kho", thay cho hiện `#admin_id` trơ ở UI cũ.
+  admin_name: string;
   created_at: string;
 }
 export const inventoryReasons: Record<InventoryReason, string> = {

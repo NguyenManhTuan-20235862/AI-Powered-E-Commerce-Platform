@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { ProductFormModal } from "@/components/admin/ProductFormModal";
@@ -15,17 +16,35 @@ const SEARCH_DEBOUNCE_MS = 450;
 /**
  * Client Component (task 4.4.1) - CSR, cùng lý do `/orders` (task 4.3.3):
  * trang quản trị nội bộ, cần tương tác nhiều (search/filter/CRUD ngay không
- * reload) hơn là cần SEO. State filter (search/category/page) giữ ở
- * `useState` THƯỜNG, KHÔNG đồng bộ qua URL `searchParams` như `ProductFilters`
- * (Customer catalog) - quyết định đơn giản hóa có chủ đích: đây là phiên làm
- * việc nội bộ của Admin, không cần share link/bookmark theo bộ lọc như trang
- * khách hàng, tránh luôn phải bọc `<Suspense>` cho `useSearchParams()` (đã tự
- * gặp lỗi build thật vì thiếu Suspense ở `/orders`, task 4.3.3).
+ * reload) hơn là cần SEO. State filter (search/category/is_active/page) giữ
+ * ở `useState` THƯỜNG, KHÔNG đồng bộ 2 CHIỀU qua URL `searchParams` như
+ * `ProductFilters` (Customer catalog) - quyết định đơn giản hóa có chủ đích
+ * VẪN GIỮ NGUYÊN: đây là phiên làm việc nội bộ của Admin, không cần share
+ * link/bookmark theo bộ lọc như trang khách hàng.
+ *
+ * NGOẠI LỆ DUY NHẤT (task "Hoàn thiện quản trị sản phẩm, danh mục và kho"):
+ * đọc `?product_id=` MỘT CHIỀU lúc mount (KHÔNG ghi ngược lại URL khi Admin
+ * tự đổi filter sau đó) - phục vụ link "tới sản phẩm" từ trang lịch sử kho
+ * (`/admin/inventory`), lọc CHÍNH XÁC đúng 1 sản phẩm qua `GET
+ * /products/admin?product_id=` (thấy được cả sản phẩm đã ẩn, khác trang chi
+ * tiết public). Cần bọc `<Suspense>` vì dùng `useSearchParams()` (Next.js App
+ * Router bắt buộc, đã tự gặp lỗi build thiếu Suspense ở `/orders`, task 4.3.3).
  *
  * Gọi `GET /products/admin` (task 4.4.1, KHÔNG PHẢI `GET /products` public)
  * - endpoint duy nhất cho phép Admin thấy sản phẩm `is_active=False`.
  */
 export default function AdminProductsPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminProductsPageContent />
+    </Suspense>
+  );
+}
+
+function AdminProductsPageContent() {
+  const searchParams = useSearchParams();
+  const initialProductId = searchParams.get("product_id");
+
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -36,6 +55,8 @@ export default function AdminProductsPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [isActive, setIsActive] = useState("");
+  const [productId, setProductId] = useState(initialProductId ?? "");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
@@ -45,6 +66,8 @@ export default function AdminProductsPage() {
       const params: Record<string, string | number> = { page, page_size: 10 };
       if (search) params.search = search;
       if (categoryId) params.category_id = categoryId;
+      if (isActive) params.is_active = isActive;
+      if (productId) params.product_id = productId;
       const { data } = await api.get<ApiResponse<PaginatedResponse<Product>>>("/products/admin", { params });
       setProducts(data.data.items);
       setTotalPages(data.data.total_pages);
@@ -55,7 +78,7 @@ export default function AdminProductsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, search, categoryId]);
+  }, [page, search, categoryId, isActive, productId]);
 
   useEffect(() => {
     fetchProducts();
@@ -80,6 +103,16 @@ export default function AdminProductsPage() {
 
   function handleCategoryChange(value: string) {
     setCategoryId(value);
+    setPage(1);
+  }
+
+  function handleIsActiveChange(value: string) {
+    setIsActive(value);
+    setPage(1);
+  }
+
+  function clearProductIdFilter() {
+    setProductId("");
     setPage(1);
   }
 
@@ -112,6 +145,15 @@ export default function AdminProductsPage() {
         </button>
       </div>
 
+      {productId && (
+        <div className="flex items-center justify-between rounded-lg border border-primary-300 bg-primary-100 px-4 py-2 text-sm text-primary-800">
+          <span>Đang lọc theo đúng 1 sản phẩm (mở từ trang lịch sử kho).</span>
+          <button type="button" onClick={clearProductIdFilter} className="font-semibold underline">
+            Bỏ lọc, xem toàn bộ
+          </button>
+        </div>
+      )}
+
       <ProductTable
         products={products}
         isLoading={isLoading}
@@ -120,6 +162,8 @@ export default function AdminProductsPage() {
         categoryId={categoryId}
         onCategoryChange={handleCategoryChange}
         categories={categories}
+        isActive={isActive}
+        onIsActiveChange={handleIsActiveChange}
         page={page}
         totalPages={totalPages}
         total={total}

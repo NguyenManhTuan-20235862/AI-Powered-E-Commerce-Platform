@@ -196,11 +196,18 @@ def list_products_admin(
     category_id: int | None = None,
     search: str | None = None,
     is_active: bool | None = None,
+    product_id: int | None = None,
 ) -> PaginatedResponse[ProductRead]:
     """Danh sách sản phẩm cho ADMIN (task 4.4.1) - KHÔNG lọc `is_active` mặc
     định (thấy CẢ sản phẩm đã ẩn, khác `list_products()` public ở trên luôn
     cứng `is_active=True`) - chỉ lọc khi Admin chọn rõ (`is_active=True` để
     xem sản phẩm đang hiện, `False` để xem sản phẩm đã ẩn, bỏ trống = tất cả).
+
+    `product_id` (task "Hoàn thiện quản trị sản phẩm, danh mục và kho") - lọc
+    ĐÚNG 1 sản phẩm theo id, dùng cho link "tới sản phẩm" từ trang lịch sử
+    kho (`/admin/inventory`) - CHÍNH XÁC hơn lọc theo `search` tên (tên có
+    thể trùng), và thấy được CẢ sản phẩm đã ẩn (khác trang chi tiết public
+    `GET /products/{id_or_slug}` chỉ trả `is_active=True`).
 
     KHÔNG cache qua Redis (khác GET /products public) - chỉ 1 Admin dùng
     trang này, lượng truy cập thấp, không đáng đánh đổi độ trễ cache (dữ liệu
@@ -211,6 +218,8 @@ def list_products_admin(
         query = query.filter(Product.is_active.is_(is_active))
     if category_id is not None:
         query = query.filter(Product.category_id == category_id)
+    if product_id is not None:
+        query = query.filter(Product.id == product_id)
     if search:
         query = query.filter(Product.name.ilike(f"%{search}%"))
 

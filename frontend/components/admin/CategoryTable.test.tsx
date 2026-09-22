@@ -143,6 +143,35 @@ describe("CategoryTable (CRUD Category Admin)", () => {
     await waitFor(() => expect(mockToastError).toHaveBeenCalledWith("Không thể xóa danh mục còn 1 danh mục con"));
   });
 
+  it("cây sâu 3 cấp - breadcrumb đầy đủ tổ tiên (KHÔNG chỉ cha trực tiếp) + sắp theo thứ tự cây, KHÔNG alphabet", () => {
+    const grandchild: Category = {
+      id: 3,
+      name: "Phụ kiện điện thoại",
+      slug: "phu-kien-dien-thoai",
+      description: null,
+      parent_id: 2,
+      created_at: "2026-08-01T00:00:00",
+    };
+    // Cố tình đưa vào theo thứ tự KHÔNG phải cha->con (con trước, alphabet
+    // "Điện thoại" < "Điện tử" < "Phụ kiện điện thoại") - buildCategoryTreeOrder
+    // phải tự sắp lại đúng cha trước con bất kể thứ tự mảng đầu vào.
+    render(<CategoryTable {...noopProps} categories={[childCategory, parentCategory, grandchild]} />);
+    const table = within(screen.getByRole("table"));
+
+    // Breadcrumb của cháu PHẢI có ĐỦ 2 cấp tổ tiên, không chỉ cha trực tiếp.
+    const grandchildRow = table.getByText("Phụ kiện điện thoại").closest("tr") as HTMLElement;
+    expect(within(grandchildRow).getByText("Điện tử > Điện thoại")).toBeInTheDocument();
+
+    // Thứ tự DOM: cha luôn đứng TRƯỚC con (Điện tử -> Điện thoại -> Phụ kiện...).
+    const rows = table.getAllByRole("row").filter((row) => row.querySelector("td"));
+    const rowNames = rows.map((row) => row.querySelector("td")?.textContent?.trim());
+    const parentIndex = rowNames.findIndex((name) => name === "Điện tử");
+    const childIndex = rowNames.findIndex((name) => name?.includes("Điện thoại") && !name.includes("Phụ kiện"));
+    const grandchildIndex = rowNames.findIndex((name) => name?.includes("Phụ kiện điện thoại"));
+    expect(parentIndex).toBeLessThan(childIndex);
+    expect(childIndex).toBeLessThan(grandchildIndex);
+  });
+
   it("bấm Sửa gọi onEdit với đúng category", async () => {
     const user = userEvent.setup();
     const onEdit = vi.fn();

@@ -23,6 +23,15 @@ import type { Product } from "@/types/product";
  * `PUT /products/{id}` với `{is_active}` (KHÔNG dùng `DELETE` - xem giải
  * thích lúc audit: DELETE chỉ 1 chiều tắt, PUT mới bật lại được, dùng PUT
  * cho CẢ 2 chiều để nhất quán 1 cơ chế duy nhất).
+ *
+ * Filter "Trạng thái" (task "Hoàn thiện quản trị sản phẩm, danh mục và kho")
+ * - lọc qua `?is_active=` (Backend đã hỗ trợ sẵn từ task 4.4.1, chỉ CHƯA có
+ * UI) - "Tất cả"/"Đang bán"/"Đã ẩn", cùng vị trí với ô search/category.
+ *
+ * Cột "Trạng thái" hiện THÊM badge "Hết hàng" riêng (viền đỏ, KHÁC badge
+ * "Đã ẩn" nền đỏ đặc để không lẫn 2 khái niệm) khi `stock_quantity === 0` -
+ * ĐỘC LẬP với `is_active` (1 sản phẩm có thể vừa hết hàng vừa vẫn đang bán,
+ * Admin cần thấy rõ CẢ 2 tín hiệu cùng lúc, không chỉ 1 trong 2).
  */
 export function ProductTable({
   products,
@@ -32,6 +41,8 @@ export function ProductTable({
   categoryId,
   onCategoryChange,
   categories,
+  isActive,
+  onIsActiveChange,
   page,
   totalPages,
   total,
@@ -47,6 +58,8 @@ export function ProductTable({
   categoryId: string;
   onCategoryChange: (value: string) => void;
   categories: Category[];
+  isActive: string;
+  onIsActiveChange: (value: string) => void;
   page: number;
   totalPages: number;
   total: number;
@@ -109,6 +122,15 @@ export function ProductTable({
             </option>
           ))}
         </select>
+        <select
+          value={isActive}
+          onChange={(e) => onIsActiveChange(e.target.value)}
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary sm:w-40"
+        >
+          <option value="">Tất cả trạng thái</option>
+          <option value="true">Đang bán</option>
+          <option value="false">Đã ẩn</option>
+        </select>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-border bg-surface">
@@ -160,17 +182,28 @@ export function ProductTable({
                     <td className="px-4 py-2 text-right text-sm font-semibold text-primary">
                       {formatPriceVnd(product.price)}
                     </td>
-                    <td className="px-4 py-2 text-center text-sm text-foreground-secondary">
+                    <td
+                      className={`px-4 py-2 text-center text-sm ${
+                        product.stock_quantity === 0 ? "font-semibold text-error" : "text-foreground-secondary"
+                      }`}
+                    >
                       {product.stock_quantity}
                     </td>
                     <td className="px-4 py-2">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-1 text-[12px] font-semibold ${
-                          product.is_active ? "bg-secondary-100 text-secondary-800" : "bg-error-container text-error"
-                        }`}
-                      >
-                        {product.is_active ? "Đang bán" : "Đã ẩn"}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-1 text-[12px] font-semibold ${
+                            product.is_active ? "bg-secondary-100 text-secondary-800" : "bg-error-container text-error"
+                          }`}
+                        >
+                          {product.is_active ? "Đang bán" : "Đã ẩn"}
+                        </span>
+                        {product.stock_quantity === 0 && (
+                          <span className="inline-flex items-center rounded-full border border-error px-2 py-1 text-[12px] font-semibold text-error">
+                            Hết hàng
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex items-center justify-end gap-1">

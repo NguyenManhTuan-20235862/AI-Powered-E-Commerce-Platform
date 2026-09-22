@@ -152,6 +152,55 @@ docker rm -f nginx-test                    # dọn sau khi test xong
 
 ## Architecture
 
+**Quản trị sản phẩm, danh mục và kho** (task "Hoàn thiện quản trị sản phẩm,
+danh mục và kho") — hoàn thiện thêm cho các module đã có sẵn từ trước (CRUD
+Product/Category task 3.4.1/4.4.1, Inventory Admin), KHÔNG phải tính năng
+mới:
+
+- **Upload ảnh sản phẩm** (`app/core/storage.py`) - validate THÊM bằng magic
+  byte đọc từ NỘI DUNG file thật (`_sniff_image_extension()`: JPEG/PNG/GIF/WEBP),
+  không còn chỉ tin `Content-Type` header (client tự khai, không được trình
+  duyệt validate nội dung - 1 file bất kỳ hoàn toàn có thể gửi kèm
+  `Content-Type: image/png` giả). Extension file lưu trên đĩa lấy từ kết quả
+  SNIFF được, không phải suy từ `Content-Type`. **Ảnh CŨ tự xóa khi upload ảnh
+  MỚI** (`delete_product_image()`, đóng `docs/KNOWN_TODOS.md` #18) - router gọi
+  hàm này NGAY SAU khi ảnh mới đã lưu + `db.commit()` thành công (không phải
+  trước) để không mất ảnh cũ nếu bước lưu ảnh mới thất bại giữa chừng; chỉ xóa
+  nếu `image_url` do chính `save_product_image()` tạo ra (validate path nằm
+  trong `UPLOAD_ROOT`), bỏ qua im lặng cho seed data/URL ngoài.
+- **`GET /products/admin` thêm `?product_id=`** (bên cạnh `?is_active=` đã có
+  từ task 4.4.1) - lọc CHÍNH XÁC đúng 1 sản phẩm (kể cả đã ẩn), dùng cho link
+  "tới sản phẩm" từ trang lịch sử kho. `app/admin/products/page.tsx` (vốn CHỦ
+  Ý không đồng bộ filter qua URL, xem đoạn cũ bên dưới) có NGOẠI LỆ DUY NHẤT:
+  đọc `?product_id=` MỘT CHIỀU lúc mount (không ghi ngược lại URL sau đó) -
+  cần bọc `<Suspense>` vì dùng `useSearchParams()`. Hiện banner "Đang lọc theo
+  đúng 1 sản phẩm" kèm nút "Bỏ lọc" khi filter này đang áp dụng.
+- **`ProductTable.tsx`** (Admin) thêm select filter "Trạng thái" (`is_active`
+  - Backend đã hỗ trợ sẵn, chỉ thiếu UI) cạnh filter category có sẵn. Cột
+  "Trạng thái" thêm badge "Hết hàng" (viền đỏ, KHÁC hẳn badge "Đã ẩn" nền đỏ
+  đặc để không lẫn 2 khái niệm) khi `stock_quantity === 0` - ĐỘC LẬP với
+  `is_active` (1 sản phẩm có thể vừa hết hàng vừa vẫn đang bán).
+- **Lịch sử điều chỉnh kho** (`/admin/inventory`, tab "Lịch sử điều chỉnh"):
+  cột "Admin" đổi từ `#admin_id` trơ sang TÊN thật (`admin_name`) - JOIN
+  BATCH sang `users` ở `inventory_service.list_adjustments()` (KHÔNG
+  denormalize lúc ghi như `product_name`, KHÔNG thêm cột/migration - cùng
+  pattern `ReviewAdminRead.product_name`, task review sản phẩm). Cột "Sản
+  phẩm" (cả tab lịch sử LẪN "Sắp hết hàng") giờ là link tới
+  `/admin/products?product_id=<id>`. Thêm nút "Xuất CSV" (chỉ hiện ở tab lịch
+  sử) - fetch HẾT các trang khớp filter hiện tại (KHÔNG chỉ 20 dòng trang
+  đang xem, giới hạn an toàn 500 trang), kèm BOM UTF-8 để Excel đọc đúng
+  tiếng Việt có dấu.
+- **Cây danh mục** (`CategoryTable.tsx`/`CategoryFormModal.tsx`) - validate
+  vòng lặp/chặn xóa danh mục còn sản phẩm hoặc danh mục con đã đầy đủ THẬT từ
+  trước (`category_service.would_create_cycle()`/`count_products_in_category()`/
+  `count_child_categories()`, xem docstring `category_service.py` - KHÔNG cần
+  sửa gì thêm ở Backend). Chỉ CÁCH HIỂN THỊ Frontend cần cải thiện: bản cũ
+  sort alphabet + chỉ hiện tên cha TRỰC TIẾP khiến cây sâu ≥ 3 cấp mất ngữ
+  cảnh ông/cụ. `lib/category-tree.ts:buildCategoryTreeOrder()` (dùng chung 2
+  component) dựng lại thứ tự CÂY thật (cha luôn đứng trước con, thụt lề) +
+  breadcrumb ĐẦY ĐỦ tổ tiên (VD "Điện tử > Điện thoại") cho `CategoryTable.tsx`,
+  và nhãn thụt lề cho dropdown "Danh mục cha" của `CategoryFormModal.tsx`.
+
 **Quản lý người dùng Admin** (`/admin/users`, hoàn thiện thêm ở task "Hoàn
 thiện quản lý tài khoản Admin") — `UserTable.tsx` ẩn nút "Khóa"/"Mở khóa" ở
 hàng `role === "admin"` (chỉ hiện "—"), khớp ĐÚNG giới hạn Backend thật:
@@ -185,8 +234,9 @@ thư mục, chuẩn layer (core/routers/models/schemas/services) và route-group
 (App Router) thông thường, khớp `docs/API_SPEC.md`. Các điểm KHÔNG tự đọc
 code suy ra được (quyết định/gap phát sinh) liệt kê dưới đây:
 
-- Backend: category service CHỈ `list_categories()` thật (task 4.2.1, phục
-  vụ filter trang catalog) — CRUD category (POST/PUT/DELETE) vẫn placeholder;
+- Backend: category service có CRUD ĐẦY ĐỦ thật (`POST`/`PUT`/`DELETE
+  /categories/{id}`, thêm sau task 4.2.1 vốn chỉ có `list_categories()` -
+  xem đoạn riêng "Quản trị danh mục" bên dưới cho chi tiết validate/xóa);
   payment vẫn placeholder (chưa tới task tương ứng).
 - Frontend: `app/admin/` là segment THẬT (không phải route group), tránh
   trùng URL với `(customer)/products`.

@@ -81,9 +81,9 @@ def test_rollback(db, setup_inventory, monkeypatch):
     with Session(db.bind) as session:
         monkeypatch.setattr(session, "commit", fail)
         from app.models.user import User, UserRole
-        admin_id = db.query(User).filter_by(role=UserRole.admin).one().id
+        admin = db.query(User).filter_by(role=UserRole.admin).one()
         with pytest.raises(RuntimeError):
-            adjust_stock(session, admin_id, "rollback", InventoryAdjustCreate(product_id=setup_inventory[0], change_quantity=5, reason="restock"))
+            adjust_stock(session, admin.id, admin.full_name, "rollback", InventoryAdjustCreate(product_id=setup_inventory[0], change_quantity=5, reason="restock"))
     db.rollback()  # End the observer session REPEATABLE READ snapshot.
     assert db.get(Product, setup_inventory[0]).stock_quantity == 10
     assert db.query(InventoryAdjustment).count() == 0
@@ -136,6 +136,7 @@ def test_filters(client, db, setup_inventory):
     assert result["total"] == 1
     assert result["items"][0]["reason"] == "damage"
     assert result["items"][0]["admin_id"] > 0
+    assert result["items"][0]["admin_name"] == "Admin Test"
     assert client.get(URL+"/adjustments?page=2&page_size=1", headers=headers).json()["data"]["items"][0]["reason"] == "restock"
 
 

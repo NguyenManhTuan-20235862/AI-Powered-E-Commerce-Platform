@@ -38,7 +38,7 @@
 | Method | Path | Mô tả | Quyền truy cập | Role |
 |--------|------|-------|-----------------|------|
 | GET | `/products` | Danh sách sản phẩm (phân trang, filter theo category/giá/tồn kho, search theo tên, sắp xếp `sort_by`: newest/price_asc/price_desc - task 4.2.1) - CHỈ `is_active=true` | 🔓 Public | - |
-| GET | `/products/admin` | Danh sách sản phẩm cho trang quản lý (task 4.4.1) - gồm CẢ sản phẩm `is_active=false`, lọc được qua `?is_active=` | 🔒 Auth | Admin |
+| GET | `/products/admin` | Danh sách sản phẩm cho trang quản lý (task 4.4.1) - gồm CẢ sản phẩm `is_active=false`, lọc được qua `?is_active=`, `?product_id=` (lọc đúng 1 sản phẩm, kể cả đã ẩn - dùng cho link "tới sản phẩm" từ lịch sử kho) | 🔒 Auth | Admin |
 | GET | `/products/{id_or_slug}` | Chi tiết 1 sản phẩm - nhận `id` (số) hoặc `slug` (task 4.2.2) | 🔓 Public | - |
 | GET | `/products/{id_or_slug}/related` | Sản phẩm liên quan / tương tự (dùng chung logic với AI gợi ý thay thế) - nhận `id` hoặc `slug` (task 4.2.2) | 🔓 Public | - |
 | POST | `/products` | Tạo sản phẩm mới | 🔒 Auth | Admin |
@@ -142,7 +142,7 @@ Chỉ Admin; JWT Bearer, envelope `APIResponse` chuẩn. Không dùng PUT sản 
 | Method | Path | Nội dung |
 |---|---|---|
 | POST | `/admin/inventory/adjust` | Body: `product_id`, `change_quantity` (integer khác 0), `reason` (`restock` tăng, `damage` giảm, `audit` chênh lệch ±), `note` nullable tối đa 500 ký tự. Header `Idempotency-Key` bắt buộc: 1–64 ký tự ASCII chữ/số/`_`/`-`. |
-| GET | `/admin/inventory/adjustments` | Phân trang `page`/`page_size`; lọc `product_id`, `reason`, `date_from`/`date_to` (bao gồm toàn bộ ngày cuối). |
+| GET | `/admin/inventory/adjustments` | Phân trang `page`/`page_size`; lọc `product_id`, `reason`, `date_from`/`date_to` (bao gồm toàn bộ ngày cuối). Response kèm `admin_name` (tên Admin thực hiện điều chỉnh, JOIN batch từ `users` - không phải cột lưu sẵn trên `inventory_adjustments`). |
 | GET | `/admin/inventory/low-stock` | `stock_quantity < threshold` (mặc định 10, số nguyên dương); `page`/`page_size`; mặc định `is_active=true`, có thể lọc sản phẩm ẩn với `false`. Sắp tồn tăng dần rồi ID, bao gồm tồn 0. |
 
 POST trả 200 gồm `id`, `product_id`, `product_name` snapshot, `change_quantity`,

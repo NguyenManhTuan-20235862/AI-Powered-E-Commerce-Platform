@@ -23,7 +23,7 @@ Pagination = Annotated[PaginationParams, Depends()]
 def adjust(payload: InventoryAdjustCreate, current_user: Admin, db: DB,
            redis_client: Annotated[redis.Redis, Depends(get_redis)],
            idempotency_key: Annotated[str, Header(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")]):
-    result = inventory_service.adjust_stock(db, current_user.id, idempotency_key, payload)
+    result = inventory_service.adjust_stock(db, current_user.id, current_user.full_name, idempotency_key, payload)
     invalidate_by_prefix(redis_client, "products:list:")
     return success_response(result, "Đã điều chỉnh tồn kho")
 

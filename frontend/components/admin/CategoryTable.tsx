@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { extractApiErrorMessage } from "@/lib/api-error";
 import { api } from "@/lib/axios";
+import { buildCategoryTreeOrder } from "@/lib/category-tree";
 import type { Category } from "@/types/category";
 
 const DESCRIPTION_TRUNCATE_LENGTH = 60;
@@ -27,9 +28,13 @@ function truncate(text: string | null, length: number): string {
  * xứng ở quy mô đồ án (đã xác nhận trước khi code - bỏ qua cột này cho đơn
  * giản).
  *
- * "Danh mục cha" hiển thị TÊN (tra qua `categoryById`, map dựng từ chính
- * danh sách `categories` đã có sẵn - không cần round-trip API riêng), không
- * phải `parent_id` số trơ.
+ * "Danh mục cha" hiển thị BREADCRUMB ĐẦY ĐỦ (toàn bộ tổ tiên, VD "Điện tử >
+ * Điện thoại", không chỉ tên cha TRỰC TIẾP) + danh sách sắp theo THỨ TỰ CÂY
+ * (cha trước con, thụt lề theo cấp qua `buildCategoryTreeOrder()`,
+ * `lib/category-tree.ts`) thay vì alphabet phẳng như bản cũ - task "Hoàn
+ * thiện quản trị sản phẩm, danh mục và kho": bản cũ chỉ hiện tên cha TRỰC
+ * TIẾP + sort alphabet khiến cây sâu ≥ 3 cấp mất hẳn ngữ cảnh ông/cụ và các
+ * dòng cha/con nằm rải rác không liền nhau.
  */
 export function CategoryTable({
   categories,
@@ -43,7 +48,7 @@ export function CategoryTable({
   onChanged: () => void;
 }) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const categoryById = new Map(categories.map((c) => [c.id, c]));
+  const treeOrder = buildCategoryTreeOrder(categories);
 
   async function handleDelete(category: Category) {
     const confirmed = window.confirm(`Xác nhận xóa danh mục "${category.name}"?`);
@@ -91,16 +96,22 @@ export function CategoryTable({
               </td>
             </tr>
           ) : (
-            categories.map((category) => {
-              const parent = category.parent_id ? categoryById.get(category.parent_id) : undefined;
+            treeOrder.map(({ category, depth, ancestry }) => {
+              const breadcrumb = ancestry.length > 0 ? ancestry.map((a) => a.name).join(" > ") : "—";
               return (
                 <tr key={category.id} className="hover:bg-primary-100/40">
-                  <td className="px-4 py-2 text-sm font-medium text-foreground">{category.name}</td>
+                  <td className="px-4 py-2 text-sm font-medium text-foreground">
+                    {/* Thụt lề theo `depth` (cây, không phải alphabet) - cha luôn đứng NGAY TRƯỚC con. */}
+                    <span style={{ paddingLeft: `${depth * 20}px` }} className="inline-block">
+                      {depth > 0 && <span className="mr-1 text-foreground-muted">└</span>}
+                      {category.name}
+                    </span>
+                  </td>
                   <td className="px-4 py-2 text-sm text-foreground-muted">{category.slug}</td>
                   <td className="px-4 py-2 text-sm text-foreground-secondary">
                     {truncate(category.description, DESCRIPTION_TRUNCATE_LENGTH)}
                   </td>
-                  <td className="px-4 py-2 text-sm text-foreground-secondary">{parent ? parent.name : "—"}</td>
+                  <td className="px-4 py-2 text-sm text-foreground-secondary">{breadcrumb}</td>
                   <td className="px-4 py-2">
                     <div className="flex items-center justify-end gap-1">
                       <button

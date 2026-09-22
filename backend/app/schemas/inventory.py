@@ -36,6 +36,12 @@ class InventoryAdjustmentRead(BaseSchema):
     reason: InventoryReason
     note: str | None
     admin_id: int
+    # KHÔNG denormalize lúc ghi (khác `product_name` ở trên, snapshot NGAY từ
+    # lúc điều chỉnh) - JOIN BATCH sang MySQL (bảng `users`) ở tầng service
+    # lúc đọc (`inventory_service.list_adjustments()`), cùng pattern
+    # `ReviewAdminRead.product_name` (task review sản phẩm) - field mới thêm
+    # SAU khi bảng đã có dữ liệu, không cần migration thêm cột.
+    admin_name: str
     created_at: datetime
 
 
