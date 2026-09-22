@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/admin/dashboard", label: "Dashboard" },
   { href: "/admin/categories", label: "Danh mục" },
   { href: "/admin/products", label: "Quản lý sản phẩm" },
+  { href: "/admin/inventory", label: "Quản lý kho" },
   { href: "/admin/orders", label: "Quản lý đơn hàng" },
   { href: "/admin/users", label: "Người dùng" },
 ];

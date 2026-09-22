@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-Hướng dẫn cho Claude Code khi làm việc trong repo này.
+Hướng dẫn cho Codex khi làm việc trong repo này.
 
 ## Project Overview
 
@@ -149,12 +149,6 @@ docker rm -f nginx-test                    # dọn sau khi test xong
 ```
 
 ## Architecture
-
-Quản lý kho Admin: `/admin/inventory/{adjust,adjustments,low-stock}`. Điều chỉnh
-delta và lịch sử trong cùng transaction, khóa Product như checkout; key duy nhất
-theo Admin chống retry trùng. Hủy/đổi trạng thái khóa lại Order trước khi kiểm tra,
-rồi khóa sản phẩm theo ID tăng dần. Lịch sử chỉ điều chỉnh Admin, không checkout.
-Seed demo đơn hàng cũng khóa/refresh sản phẩm trước khi tính tồn còn lại.
 
 Cấu trúc thư mục `backend/app/` và `frontend/app/` — xem trực tiếp cấu trúc
 thư mục, chuẩn layer (core/routers/models/schemas/services) và route-group

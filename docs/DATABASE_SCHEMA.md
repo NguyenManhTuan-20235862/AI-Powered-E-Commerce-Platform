@@ -4,21 +4,34 @@
 (model Category/Product) + 3.1.3 (model CartItem/Order/OrderItem/Payment) +
 3.1.4 (Alembic migration) + 3.2.1 (collection MongoDB `chat_logs`) + 3.2.2
 (collection MongoDB `reviews`) + 3.5.1 (collection MongoDB `product_catalog_sync`)
-**Phạm vi:** Đủ 7 bảng MySQL — `users`, `categories`, `products`, `cart_items`,
-`orders`, `order_items`, `payments` — VÀ 3 collection MongoDB — `chat_logs`,
+**Phạm vi:** Đủ 8 bảng MySQL — `users`, `categories`, `products`, `cart_items`,
+`orders`, `order_items`, `payments`, `inventory_adjustments` — VÀ 3 collection MongoDB — `chat_logs`,
 `reviews`, `product_catalog_sync`
 **Công nghệ:** MySQL 8, SQLAlchemy 2.0 (ORM), Alembic (migration) cho phần
 quan hệ; MongoDB (PyMongo) cho phần phi cấu trúc
 **Model code thật:** `app/models/user.py`, `category.py`, `product.py`, `cart.py`,
-`order.py` (Order/OrderItem/Payment cùng file) cho MySQL — `app/schemas/chat_log.py`
+`order.py` (Order/OrderItem/Payment cùng file), `inventory.py` cho MySQL — `app/schemas/chat_log.py`
 (Pydantic, KHÔNG phải SQLAlchemy — MongoDB không có ORM quan hệ) cho `chat_logs`.
 File này là tài liệu SCHEMA (cột/field/ràng buộc/index/lý do nghiệp vụ), KHÔNG
-lặp lại toàn bộ code Python cho 6 bảng MySQL mới + collection MongoDB (khác
+lặp lại toàn bộ code Python cho các bảng MySQL + collection MongoDB (khác
 cách trình bày bảng `users` bên dưới, viết từ trước khi có code thật) để tránh
 2 nguồn dễ lệch nhau — code trong `app/models/`/`app/schemas/chat_log.py` mới
 là nguồn chính thức, sửa gì thì đồng bộ lại bảng ở đây.
 
 ---
+
+## Bảng `inventory_adjustments` (bổ sung Quản lý kho Admin)
+
+Migration `a71c92e804bd` nối tiếp `f00f506b3a6b`, chỉ thêm bảng mới, không backfill.
+`id` BIGINT PK auto increment; `product_id` BIGINT FK products; `product_name`
+VARCHAR(255) snapshot; `change_quantity`, `stock_before`, `stock_after` INT;
+`reason` VARCHAR(20); `note` VARCHAR(500) nullable; `admin_id` BIGINT FK users;
+`created_at` DATETIME mặc định CURRENT_TIMESTAMP. Các cột còn lại NOT NULL.
+`idempotency_key` VARCHAR(64) ascii_bin, UNIQUE(admin_id, idempotency_key).
+FK giữ mặc định RESTRICT. Index (product_id, created_at) và (created_at).
+Service kiểm tra dấu, số lượng khác 0 và tồn sau trong [0, 2147483647].
+Ghi tồn và lịch sử cùng transaction; lịch sử chỉ điều chỉnh Admin, không phải sổ
+biến động đầy đủ. Không có API sửa/xóa. Số bảng MySQL hiện tại tăng từ 7 lên 8.
 
 ## Bảng `users`
 

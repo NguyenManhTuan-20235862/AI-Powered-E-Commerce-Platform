@@ -199,7 +199,7 @@ def checkout(db: Session, user: User, payload: OrderCreate) -> Order:
     # Khóa products theo thứ tự product_id TĂNG DẦN - xem lý do ở docstring module.
     product_ids = sorted({item.product_id for item in cart_items})
     products_by_id = {
-        pid: db.query(Product).filter(Product.id == pid).with_for_update().one() for pid in product_ids
+        pid: db.query(Product).filter(Product.id == pid).populate_existing().with_for_update().one() for pid in product_ids
     }
 
     # Kiểm tra LẠI (dưới khóa - thấy đúng giá trị mới nhất đã commit, không
@@ -264,7 +264,7 @@ def _restock_order_items(db: Session, order: Order) -> None:
     items = db.query(OrderItem).filter(OrderItem.order_id == order.id).all()
     product_ids = sorted({item.product_id for item in items})
     products_by_id = {
-        pid: db.query(Product).filter(Product.id == pid).with_for_update().one() for pid in product_ids
+        pid: db.query(Product).filter(Product.id == pid).populate_existing().with_for_update().one() for pid in product_ids
     }
     for item in items:
         products_by_id[item.product_id].stock_quantity += item.quantity
@@ -282,6 +282,9 @@ def cancel_order(db: Session, order: Order) -> None:
     sự "bán" (chưa xác nhận/giao) - không hoàn kho sẽ khiến tồn kho bị mất
     vĩnh viễn cho đơn không thành.
     """
+    # Serialize status validation as well as restocking: two cancellations
+    # must not both observe pending and restore stock twice.
+    db.refresh(order, with_for_update=True)
     if order.status != OrderStatus.pending:
         raise CancelNotAllowedError(
             f'Chỉ có thể hủy đơn ở trạng thái "pending" (đơn hiện tại: "{order.status.value}")'
@@ -306,6 +309,7 @@ def update_order_status(db: Session, order: Order, new_status: OrderStatus) -> N
     giữa 2 đường hủy đơn (Customer tự hủy vs Admin hủy hộ), xem giải thích ở
     `_restock_order_items`.
     """
+    db.refresh(order, with_for_update=True)
     allowed = VALID_STATUS_TRANSITIONS[order.status]
     if new_status not in allowed:
         if not allowed:

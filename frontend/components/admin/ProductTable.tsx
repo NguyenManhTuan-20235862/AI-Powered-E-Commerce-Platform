@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { InventoryAdjustmentModal } from "@/components/admin/InventoryAdjustmentModal";
 
 import { extractApiErrorMessage } from "@/lib/api-error";
 import { api } from "@/lib/axios";
@@ -56,6 +57,7 @@ export function ProductTable({
 }) {
   const { start, end } = formatPaginationRange(page, pageSize, total);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [adjusting, setAdjusting] = useState<Product | null>(null);
 
   async function handleToggleActive(product: Product) {
     setTogglingId(product.id);
@@ -72,6 +74,7 @@ export function ProductTable({
 
   return (
     <div className="flex flex-col gap-4">
+      {adjusting && <InventoryAdjustmentModal product={adjusting} onClose={() => setAdjusting(null)} onSaved={() => onChanged()} />}
       <div className="flex flex-col items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4 sm:flex-row">
         <div className="relative w-full sm:w-96">
           <svg
@@ -171,6 +174,7 @@ export function ProductTable({
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex items-center justify-end gap-1">
+                        <button type="button" onClick={() => setAdjusting(product)} className="rounded border border-border px-2 py-2 text-sm hover:bg-primary-100">Điều chỉnh kho</button>
                         <button
                           type="button"
                           onClick={() => onEdit(product)}

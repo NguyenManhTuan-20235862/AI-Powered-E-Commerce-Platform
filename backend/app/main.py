@@ -24,6 +24,7 @@ from app.routers import (
     cart,
     category,
     dashboard,
+    inventory,
     notification,
     order,
     payment,
@@ -50,6 +51,7 @@ TAGS_METADATA = [
     {"name": "AI Agent / Chat", "description": "Chat AI qua WebSocket và REST fallback (LangChain)."},
     {"name": "Notification", "description": "Sự kiện realtime qua SSE (task 9.x)."},
     {"name": "Dashboard Admin", "description": "Thống kê tổng quan cho Admin."},
+    {"name": "Inventory Admin", "description": "Điều chỉnh tồn kho và lịch sử thao tác Admin."},
     {"name": "Health Check", "description": "Kiểm tra service sống - dùng cho Docker healthcheck / CI."},
 ]
 
@@ -175,6 +177,7 @@ app.include_router(review.router, prefix=API_PREFIX)
 app.include_router(ai_chat.router, prefix=API_PREFIX)
 app.include_router(notification.router, prefix=API_PREFIX)
 app.include_router(dashboard.router, prefix=API_PREFIX)
+app.include_router(inventory.router, prefix=API_PREFIX)
 
 
 @app.get("/", include_in_schema=False)
