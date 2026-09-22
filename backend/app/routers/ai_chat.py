@@ -171,7 +171,7 @@ async def chat_websocket(
 
             reply_parts: list[str] = []
             try:
-                async for chunk_text in chat_service.stream_agent_reply(mongo_db, session_id, payload.message):
+                async for chunk_text in chat_service.stream_agent_reply(mongo_db, session_id):
                     reply_parts.append(chunk_text)
                     await websocket.send_json({"type": "chunk", "content": chunk_text})
             except LLMUnavailableError:

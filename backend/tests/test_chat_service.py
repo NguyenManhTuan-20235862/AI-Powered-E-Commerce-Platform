@@ -4,7 +4,7 @@
 1. `load_session_history()` - logic cắt bớt lịch sử phiên (MOCK `mongo_db`,
    KHÔNG cần MongoDB thật - đây là test logic truy vấn/map dữ liệu thuần,
    không phải test hành vi MongoDB thật).
-2. `stream_agent_reply()` ghép đúng system prompt + lịch sử + tin nhắn mới
+2. `stream_agent_reply()` ghép đúng system prompt + lịch sử đã gồm tin nhắn mới
    (MOCK CẢ `mongo_db` LẪN `astream_llm` - kiểm tra đúng WIRING, không phụ
    thuộc LLM thật trả lời "thông minh" hay không).
 3. `stream_agent_reply()` gọi LLM THẬT, trả chunk thật - SKIP (không FAIL)
@@ -24,7 +24,6 @@ import pytest
 from langchain_core.messages import SystemMessage
 
 from app.core.llm import LLMUnavailableError
-from app.core.database import get_mongo_db
 from app.services.chat_service import MAX_HISTORY_MESSAGES, load_session_history, stream_agent_reply
 
 
@@ -77,14 +76,18 @@ def test_load_session_history_maps_role_to_correct_message_type() -> None:
     assert history[1].content == "Trả lời cũ"
 
 
-def test_stream_agent_reply_includes_system_prompt_and_session_history() -> None:
-    """Kiểm tra ĐÚNG WIRING (task 6.1.2, quyết định "nhớ toàn phiên") - mock
-    `astream_llm` để bắt lại CHÍNH XÁC danh sách message đã ghép, không phụ
-    thuộc LLM thật trả lời đúng/sai."""
+def test_stream_agent_reply_includes_each_persisted_message_exactly_once() -> None:
+    """Kiểm tra ĐÚNG WIRING và regression cho lỗi lặp câu hỏi hiện tại.
+
+    Router lưu câu hỏi mới trước khi gọi service, nên query lịch sử đã chứa
+    câu đó. Prompt gửi LLM phải gồm system + lịch sử đúng một lần, không nối
+    thêm câu hỏi mới lần thứ hai.
+    """
     # Mock GIẢM DẦN (mới nhất trước, đúng hành vi truy vấn thật) - xem giải
     # thích thứ tự ở test_load_session_history_maps_role_to_correct_message_type.
     mongo_db = MagicMock()
     mongo_db.__getitem__.return_value.find.return_value.sort.return_value.limit.return_value = [
+        {"role": "user", "message": "Câu hỏi mới"},
         {"role": "assistant", "message": "Trả lời cũ"},
         {"role": "user", "message": "Câu hỏi cũ"},
     ]
@@ -98,7 +101,7 @@ def test_stream_agent_reply_includes_system_prompt_and_session_history() -> None
     async def run() -> list[str]:
         chunks = []
         with patch("app.services.chat_service.astream_llm", fake_astream_llm):
-            async for chunk in stream_agent_reply(mongo_db, "sess-wiring", "Câu hỏi mới"):
+            async for chunk in stream_agent_reply(mongo_db, "sess-wiring"):
                 chunks.append(chunk)
         return chunks
 
@@ -110,6 +113,7 @@ def test_stream_agent_reply_includes_system_prompt_and_session_history() -> None
     assert captured_messages[1].content == "Câu hỏi cũ"
     assert captured_messages[2].content == "Trả lời cũ"
     assert captured_messages[3].content == "Câu hỏi mới"
+    assert [message.content for message in captured_messages].count("Câu hỏi mới") == 1
 
 
 def test_stream_agent_reply_raises_llm_unavailable_without_crashing() -> None:
@@ -125,7 +129,7 @@ def test_stream_agent_reply_raises_llm_unavailable_without_crashing() -> None:
 
     async def run() -> None:
         with patch("app.services.chat_service.astream_llm", failing_astream_llm):
-            async for _ in stream_agent_reply(mongo_db, "sess-error", "Xin chào"):
+            async for _ in stream_agent_reply(mongo_db, "sess-error"):
                 pass
 
     with pytest.raises(LLMUnavailableError):
@@ -133,14 +137,17 @@ def test_stream_agent_reply_raises_llm_unavailable_without_crashing() -> None:
 
 
 def test_stream_agent_reply_returns_real_chunks_or_skips_if_unavailable() -> None:
-    """LLM THẬT - session_id ngẫu nhiên/không tồn tại (lịch sử rỗng, hàm CHỈ
-    ĐỌC Mongo, KHÔNG ghi gì) nên an toàn dùng thẳng `get_mongo_db()` thật,
-    không cần dọn dữ liệu sau test."""
-    mongo_db = get_mongo_db()
+    """LLM THẬT với lịch sử giả lập đã chứa câu hỏi hiện tại. Mongo được mock
+    vì test này chỉ xác nhận stream thật từ provider; wiring Mongo đã được
+    kiểm tra riêng ở các test phía trên."""
+    mongo_db = MagicMock()
+    mongo_db.__getitem__.return_value.find.return_value.sort.return_value.limit.return_value = [
+        {"role": "user", "message": "Xin chào"}
+    ]
 
     async def run() -> str:
         chunks = []
-        async for chunk in stream_agent_reply(mongo_db, "test-session-no-history", "Xin chào"):
+        async for chunk in stream_agent_reply(mongo_db, "test-session-no-history"):
             chunks.append(chunk)
         return "".join(chunks)
 
