@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { CartItemRow } from "@/components/cart/CartItemRow";
+import { RequireAuth } from "@/components/layout/RequireAuth";
 import { useCart } from "@/context/CartContext";
 import { formatPriceVnd } from "@/lib/format";
 
@@ -11,8 +12,21 @@ import { formatPriceVnd } from "@/lib/format";
  * `CartContext` (task 4.3.1), KHÔNG tự fetch/giữ state riêng. Header/Footer
  * đã có sẵn qua `app/(customer)/layout.tsx` (bọc `CartProvider`) nên chỉ port
  * phần `<main>` của Stitch, không lặp lại nav/header của file gốc.
+ *
+ * Bọc `RequireAuth` - chưa đăng nhập phải về `/login`, KHÔNG hiện "giỏ hàng
+ * trống" (đó là trạng thái ĐÃ đăng nhập nhưng chưa mua gì, khác hẳn "chưa
+ * đăng nhập" - `CartContext` tự trả `EMPTY_CART` cho cả 2 case nên cần chặn
+ * riêng ở đây).
  */
 export default function CartPage() {
+  return (
+    <RequireAuth>
+      <CartPageContent />
+    </RequireAuth>
+  );
+}
+
+function CartPageContent() {
   const { items, totalCount, totalPrice, isLoading } = useCart();
 
   if (isLoading) {

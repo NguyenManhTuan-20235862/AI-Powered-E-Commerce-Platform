@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { CheckoutForm } from "@/components/checkout/CheckoutForm";
+import { RequireAuth } from "@/components/layout/RequireAuth";
 import { useCart } from "@/context/CartContext";
 
 /**
@@ -23,8 +24,19 @@ import { useCart } from "@/context/CartContext";
  * `router.replace("/cart")`, ĐUA (race) với điều hướng sang trang xác nhận
  * và THẮNG - kết quả sai: đặt hàng thành công nhưng bị đá về `/cart` thay vì
  * trang xác nhận. Chỉ check 1 lần lúc mount/load xong tránh đúng race này.
+ *
+ * Bọc `RequireAuth` - cùng lý do `/cart` (RequireAuth.tsx): chưa đăng nhập
+ * phải về `/login`, không được lẫn với case "đã đăng nhập nhưng giỏ trống".
  */
 export default function CheckoutPage() {
+  return (
+    <RequireAuth>
+      <CheckoutPageContent />
+    </RequireAuth>
+  );
+}
+
+function CheckoutPageContent() {
   const router = useRouter();
   const { items, isLoading } = useCart();
   const [hasCheckedCart, setHasCheckedCart] = useState(false);

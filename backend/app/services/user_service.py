@@ -11,8 +11,14 @@ không làm phần này trước).
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.security import hash_password, verify_password
 from app.models.user import User, UserRole
-from app.schemas.user import UserResponse
+from app.schemas.user import ChangePasswordRequest, UserResponse, UserUpdate
+
+
+class UserServiceError(Exception):
+    """Lỗi nghiệp vụ User (mật khẩu cũ không đúng...) - router dịch sang
+    HTTPException 400, cùng convention `CartError` (`cart_service.py`)."""
 
 
 def list_users(
@@ -56,3 +62,26 @@ def update_user_status(db: Session, user: User, is_active: bool) -> None:
     user.is_active = is_active
     db.commit()
     db.refresh(user)
+
+
+def update_profile(db: Session, user: User, payload: UserUpdate) -> User:
+    """Cập nhật thông tin cá nhân (`PUT /users/me`) - CHỈ ghi đè field client
+    THỰC SỰ gửi lên (`model_dump(exclude_unset=True)`) - field không gửi giữ
+    nguyên giá trị cũ, không bị ép về `None` (toàn bộ field `UserUpdate` đều
+    optional, gửi thiếu 1 field không có nghĩa là muốn xóa field đó)."""
+    updates = payload.model_dump(exclude_unset=True)
+    for field, value in updates.items():
+        setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def change_password(db: Session, user: User, payload: ChangePasswordRequest) -> None:
+    """Đổi mật khẩu (`PUT /users/me/password`) - PHẢI xác nhận đúng mật khẩu
+    CŨ trước khi cho đổi (chặn kẻ chiếm được access token ngắn hạn tự đổi mật
+    khẩu chiếm quyền dài hạn tài khoản)."""
+    if not verify_password(payload.old_password, user.password_hash):
+        raise UserServiceError("Mật khẩu cũ không đúng")
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()

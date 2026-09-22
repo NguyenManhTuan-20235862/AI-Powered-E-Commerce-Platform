@@ -140,3 +140,87 @@ def test_update_user_status_404_for_missing_user(client: TestClient, db: Session
     headers = _admin_headers(db)
     response = client.put("/api/v1/users/999999/status", json={"is_active": False}, headers=headers)
     assert response.status_code == 404
+
+
+def test_admin_cannot_lock_self(client: TestClient, db: Session) -> None:
+    admin = _create_user(db, email="self-lock@example.com", full_name="Self Lock Admin", role=UserRole.admin)
+    token = create_access_token(user_id=admin.id, role=admin.role.value)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.put(f"/api/v1/users/{admin.id}/status", json={"is_active": False}, headers=headers)
+    assert response.status_code == 403
+
+    db.refresh(admin)
+    assert admin.is_active is True
+
+
+def test_admin_cannot_lock_another_admin(client: TestClient, db: Session) -> None:
+    headers = _admin_headers(db)
+    other_admin = _create_user(db, email="other-admin@example.com", full_name="Other Admin", role=UserRole.admin)
+
+    response = client.put(f"/api/v1/users/{other_admin.id}/status", json={"is_active": False}, headers=headers)
+    assert response.status_code == 403
+
+    db.refresh(other_admin)
+    assert other_admin.is_active is True
+
+
+# ---- PUT /users/me, PUT /users/me/password ----
+
+
+def _login_headers(user: User) -> dict:
+    token = create_access_token(user_id=user.id, role=user.role.value)
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_update_my_profile_updates_only_sent_fields(client: TestClient, db: Session) -> None:
+    user = _create_user(db, email="update-profile@example.com", full_name="Old Name", role=UserRole.customer)
+    user.phone = "0900000000"
+    user.address = "Old Address"
+    db.commit()
+
+    response = client.put(
+        "/api/v1/users/me",
+        json={"full_name": "New Name"},
+        headers=_login_headers(user),
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["full_name"] == "New Name"
+    # phone/address KHÔNG gửi lên - phải giữ nguyên giá trị cũ, không bị xóa.
+    assert data["phone"] == "0900000000"
+    assert data["address"] == "Old Address"
+
+
+def test_change_my_password_wrong_old_password_returns_400(client: TestClient, db: Session) -> None:
+    user = _create_user(db, email="change-pw-wrong@example.com", full_name="Change Pw", role=UserRole.customer)
+
+    response = client.put(
+        "/api/v1/users/me/password",
+        json={"old_password": "wrong-old-password", "new_password": "newpassword123"},
+        headers=_login_headers(user),
+    )
+    assert response.status_code == 400
+
+
+def test_change_my_password_success_then_login_with_new_password(client: TestClient, db: Session) -> None:
+    user = _create_user(db, email="change-pw-ok@example.com", full_name="Change Pw", role=UserRole.customer)
+
+    response = client.put(
+        "/api/v1/users/me/password",
+        json={"old_password": "password123", "new_password": "newpassword123"},
+        headers=_login_headers(user),
+    )
+    assert response.status_code == 200, response.text
+
+    old_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "change-pw-ok@example.com", "password": "password123"},
+    )
+    assert old_login.status_code == 401
+
+    new_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "change-pw-ok@example.com", "password": "newpassword123"},
+    )
+    assert new_login.status_code == 200

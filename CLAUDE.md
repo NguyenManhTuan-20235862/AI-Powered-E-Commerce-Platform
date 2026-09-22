@@ -350,6 +350,76 @@ thật đầy đủ). Middleware log request (`app/core/middleware.py`) loại t
 path `/api/v1/notifications/` khỏi đo `duration_ms` — số đo theo cách cũ vô
 nghĩa cho kết nối mở vô thời hạn (đóng KNOWN_TODOS #3).
 
+**`POST /auth/refresh` + revoke refresh token khi logout** (task "Hoàn thiện
+tài khoản và phiên đăng nhập", đóng KNOWN_TODOS #15) — `get_user_from_refresh_token()`
+(`app/core/security.py`) verify chữ ký/hạn/`type=refresh` + check blacklist +
+`is_active`, tách riêng khỏi `get_current_user` (access token, qua
+`Authorization` header) vì refresh token đi qua request body
+(`RefreshTokenRequest`), không cần dependency chain FastAPI. **KHÔNG rotate**
+refresh token — mỗi lần `/auth/refresh` chỉ cấp access token MỚI, trả nguyên
+refresh token client đã gửi (quyết định đã xác nhận: đơn giản hơn, refresh
+token vẫn dùng lại được tới khi tự hết hạn `REFRESH_TOKEN_EXPIRE_DAYS` hoặc
+bị revoke lúc logout). `blacklist_access_token()` đổi tên thành
+`blacklist_token()` (dùng chung cho CẢ access lẫn refresh, logic chỉ phụ
+thuộc `jti`/`exp`, không phụ thuộc `type`) — `POST /auth/logout` nhận thêm
+body optional `LogoutRequest.refresh_token`, blacklist LUÔN token này nếu
+client gửi kèm (đúng `docs/API_SPEC.md` "đưa refresh token vào Redis
+blacklist"), best-effort (refresh token thiếu/sai không làm logout thất bại).
+
+**Admin KHÔNG được khóa/mở khóa BẤT KỲ tài khoản Admin nào** (`PUT
+/users/{id}/status`, kể cả tự khóa chính mình) — quyết định đã xác nhận,
+chặn cả 2 trường hợp (tự khóa + khóa Admin khác) bằng 1 điều kiện duy nhất
+(`user.role == UserRole.admin` → 403), tránh 1 Admin duy nhất tự khóa hết hệ
+thống hoặc nhiều Admin khóa lẫn nhau. Chỉ áp dụng được cho tài khoản
+Customer. `PUT /users/me`/`PUT /users/me/password` implement thật cùng task
+này (`user_service.py:update_profile()`/`change_password()`) — `update_profile()`
+chỉ ghi đè field client THỰC SỰ gửi (`model_dump(exclude_unset=True)`),
+`change_password()` bắt buộc verify đúng `old_password` trước khi đổi (raise
+`UserServiceError` → router dịch 400, cùng convention `CartError`).
+
+**`AuthProvider`/`AuthContext`** (`frontend/context/AuthContext.tsx`, đóng
+KNOWN_TODOS #22 - `useAuth()` gọi lặp `GET /auth/me`) — đặt ở ROOT layout
+(`app/layout.tsx`), KHÔNG đặt trong `(customer)/layout.tsx` như `CartProvider`
+vì `AdminAuthGuard` (route `admin/`) CŨNG cần đọc chung state này.
+`hooks/useAuth.ts` giờ CHỈ còn là lớp mỏng bọc `useContext()` — giữ nguyên
+tên + shape trả về (`{user, isAuthenticated, isLoading, logout}`) nên
+Header/CartContext/ChatWidget/AdminAuthGuard KHÔNG cần sửa gì. `LoginForm.tsx`
+gọi `refetch()` (AuthContext, trả về `User` vừa fetch) thay vì tự gọi riêng
+`GET /auth/me` — vừa lấy được `role` để quyết định redirect, vừa cập nhật
+state dùng chung ngay lập tức.
+
+`AuthProvider` KHÔNG pre-check `isTokenExpired()` trước khi gọi `/auth/me`
+(khác bản `useAuth.ts` cũ) — cố tình để access token hết hạn vẫn được gọi
+THẬT, response interceptor (`lib/axios.ts`) tự refresh silent + retry đúng 1
+lần nếu refresh token còn hợp lệ (giữ đăng nhập xuyên phiên dù access token
+hết hạn 60 phút) — nhiều request 401 gần như đồng thời CHỈ gọi
+`POST /auth/refresh` ĐÚNG 1 LẦN (`refreshPromise` dùng chung, các request
+401 khác đợi cùng promise). Refresh gọi qua `refreshApi` — instance axios
+RIÊNG, không gắn interceptor nào, tránh đệ quy vào chính interceptor này nếu
+refresh thất bại. Access token mới ghi LẠI ĐÚNG storage cũ
+(`isTokenPersisted()`, `lib/auth.ts`) — không tự đổi "Ghi nhớ đăng nhập"
+(localStorage) và session-only (sessionStorage) giữa chừng phiên.
+
+Refresh thất bại (không có refresh token/hết hạn/bị revoke) → dọn token +
+điều hướng `/login`, NHƯNG chỉ khi request gốc KHÔNG đánh dấu
+`skipAuthRedirect: true` — cờ này dùng cho lần gọi `GET /auth/me`/`POST
+/auth/logout` NỀN lúc `AuthProvider` mount/logout (chạy trên MỌI trang kể cả
+trang công khai), tránh đá user đang xem trang công khai (home, catalog...)
+sang `/login` chỉ vì có token cũ/hết hạn nhiều ngày trước còn sót trong
+storage — đã tự verify qua browser: session chết (refresh token cũng hỏng)
+trên `/orders` (có `RequireAuth`) → điều hướng `/login` qua GUARD; session
+chết y hệt trên `/` (trang công khai) → ở lại `/`, chỉ âm thầm coi như chưa
+đăng nhập. `RequireAuth.tsx` (`components/layout/RequireAuth.tsx`) là guard
+dùng chung cho `/cart`, `/checkout`, `/orders` — chặn TRƯỚC khi nội dung con
+kịp fetch/render (trước đây `/cart` tự trả "giỏ hàng trống" và `/orders` hiện
+nhầm "chưa có đơn hàng nào" cho user CHƯA đăng nhập, khác hẳn case đã đăng
+nhập nhưng chưa có dữ liệu).
+
+`app/profile/page.tsx` (trang hồ sơ) — route TOP-LEVEL, KHÔNG nằm trong
+`(customer)/` hay `admin/` (dùng chung CẢ 2 role) - tự guard bằng `useAuth()`
+trực tiếp, không phụ thuộc `CartProvider`/`AdminAuthGuard`. Link vào trang
+này đặt ở dropdown user (`Header.tsx`, Customer) VÀ `Sidebar.tsx` (Admin).
+
 **Luồng dữ liệu chính**:
 - **MySQL** (qua SQLAlchemy): dữ liệu quan hệ — User, Product, Category, Cart, Order.
 - **MongoDB** (qua PyMongo): dữ liệu phi cấu trúc — Chat log (AI Agent), Review.

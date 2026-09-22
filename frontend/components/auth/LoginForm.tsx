@@ -8,25 +8,23 @@ import { loginSchema, type LoginFormValues } from "@/lib/validations/auth";
 import { genericAuthErrorMessage } from "@/lib/api-error";
 import { api } from "@/lib/axios";
 import { setTokens } from "@/lib/auth";
+import { useAuthContext } from "@/context/AuthContext";
 
 // POST /auth/login trả về TokenPair (access_token, refresh_token, token_type)
 // - KHÔNG có object `user`/role lồng trong đó (đúng docs/API_SPEC.md mục 1) -
 // khác giả định cũ (bug - xem docs/KNOWN_TODOS.md #9). Muốn biết role thật để
-// redirect đúng, phải gọi riêng GET /auth/me SAU KHI đã có token.
+// redirect đúng, dùng `refetch()` của AuthContext (gọi GET /auth/me + cập
+// nhật LUÔN state dùng chung - Header/Cart/ChatWidget thấy đăng nhập ngay,
+// không phải tự gọi /auth/me thêm 1 lần riêng như bản cũ, đóng docs/KNOWN_TODOS.md #22).
 type LoginApiResponse = {
   success: boolean;
   message: string;
   data: { access_token: string; refresh_token: string; token_type: string };
 };
 
-type MeApiResponse = {
-  success: boolean;
-  message: string;
-  data: { id: number; email: string; full_name: string; role: "customer" | "admin" };
-};
-
 export function LoginForm() {
   const router = useRouter();
+  const { refetch } = useAuthContext();
   const searchParams = useSearchParams();
   const justRegistered = searchParams.get("registered") === "1";
   const [serverError, setServerError] = useState<string | null>(null);
@@ -48,15 +46,15 @@ export function LoginForm() {
       // không bao giờ tiết lộ email hay password sai.
       setTokens(access_token, refresh_token, { persist: !!values.remember });
 
-      // api (lib/axios.ts) tự gắn Authorization: Bearer từ token vừa lưu ở
-      // trên (interceptor đọc getToken() mỗi request) - gọi được /auth/me
-      // ngay mà không cần truyền token thủ công.
-      const me = await api.get<MeApiResponse>("/auth/me");
+      // refetch() (AuthContext) tự gắn Authorization: Bearer từ token vừa lưu
+      // ở trên (interceptor đọc getToken() mỗi request) - gọi /auth/me ngay,
+      // KHÔNG cần truyền token thủ công, VÀ cập nhật state dùng chung luôn.
+      const me = await refetch();
       // "/admin/dashboard" (không phải "/admin" trơ) - app/admin/ hiện KHÔNG
       // có page.tsx ở gốc (chỉ có dashboard/orders/products con), redirect
       // "/admin" sẽ 404 (đã tự kiểm chứng lúc verify task 2.3.4 fix #9) - phát
       // hiện đây là gap có sẵn từ trước, không liên quan tới bug #9 vừa sửa.
-      router.push(me.data.data.role === "admin" ? "/admin/dashboard" : "/");
+      router.push(me?.role === "admin" ? "/admin/dashboard" : "/");
     } catch (err) {
       setServerError(genericAuthErrorMessage(err, "login"));
     }
