@@ -3,9 +3,8 @@
 # tool), chạy Gunicorn + Uvicorn worker (không --reload), user KHÔNG PHẢI root,
 # code COPY hẳn vào image (không volume mount).
 #
-# CHƯA cài requirements-ai.txt (langchain, langchain-openai) - giữ đúng nguyên
-# tắc như Dockerfile.dev, xem docs/KNOWN_TODOS.md mục #4 (cùng áp dụng cho file
-# này) và phần "task 6.1" ở cuối summary trả lời task 2.1.2.
+# Cài requirements-ai.txt (langchain, langchain-openai) - task 6.1.1, đóng
+# docs/KNOWN_TODOS.md #4 (áp dụng cho cả file này).
 
 # ---- Stage 1: builder - cài dependency vào 1 venv riêng ----
 FROM python:3.12-slim AS builder
@@ -25,6 +24,12 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements-core.txt requirements-prod.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements-core.txt -r requirements-prod.txt
+
+# requirements-ai.txt cài RIÊNG, SAU layer core+prod ở trên (task 6.1.1) -
+# giữ TÁCH layer, đổi AI deps không làm invalidate cache của layer core/prod,
+# và ngược lại - cùng nguyên tắc Dockerfile.dev.
+COPY requirements-ai.txt .
+RUN pip install --no-cache-dir -r requirements-ai.txt
 
 # ---- Stage 2: runtime - image cuối, KHÔNG có build tool/pip cache ----
 FROM python:3.12-slim

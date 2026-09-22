@@ -37,8 +37,25 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # AI Agent (LangChain)
-    OPENAI_API_KEY: str | None = None
+    # AI Agent (LangChain) - task 6.1.1: cấu hình LINH HOẠT đổi provider
+    # (Ollama local, miễn phí, dùng cho dev <-> OpenAI thật, trả phí, dùng cho
+    # demo/production) CHỈ qua biến môi trường, KHÔNG sửa code -
+    # `ChatOpenAI` (langchain-openai, app/core/llm.py) hoạt động với BẤT KỲ
+    # endpoint tương thích OpenAI nào (chỉ cần đổi base_url + api_key), không
+    # cần cài thư viện riêng cho Ollama. Thay thế field `OPENAI_API_KEY` cũ
+    # (khai báo từ trước nhưng chưa có code nào dùng) - field đó chỉ hoạt
+    # động đúng 1 provider (OpenAI thật), không đủ linh hoạt cho yêu cầu này.
+    LLM_BASE_URL: str = ""
+    LLM_API_KEY: str = ""
+    LLM_MODEL: str = "llama3.2"
+    # Giới hạn chi phí/độ dài response - đặt sẵn dù Ollama miễn phí (không
+    # tính theo token) để khi đổi sang OpenAI thật (demo/production) đã có
+    # sẵn giới hạn, không quên bảo vệ chi phí lúc đổi provider.
+    LLM_MAX_TOKENS: int = 1000
+    # Giây - tránh treo request khi LLM chậm/không phản hồi (cùng tinh thần
+    # timeout 3s đã đặt cho Mongo/Redis ở database.py, nhưng LLM cần ngưỡng
+    # dài hơn hẳn - sinh văn bản chậm hơn nhiều so với 1 query DB).
+    LLM_TIMEOUT: int = 30
 
     # Scheduler (task 3.5.2) - lịch chạy job đồng bộ Product -> MongoDB
     # (backend/scripts/run_scheduler.py), cú pháp cron chuẩn (phút giờ ngày

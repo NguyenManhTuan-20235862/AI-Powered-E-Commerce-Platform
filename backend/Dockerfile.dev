@@ -26,21 +26,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # không phải tải + cài lại toàn bộ dependency mỗi lần build.
 #
 # Cài requirements-core.txt + requirements-test.txt (dev cần chạy `pytest`, kể
-# cả qua `docker exec <container> pytest`) - CHƯA cài requirements-ai.txt
-# (langchain, langchain-openai) cho tới khi thực sự bắt đầu code AI Agent
-# (task 6.x, xem docs/KNOWN_TODOS.md). Bỏ qua vì hiện KHÔNG có code nào trong
-# app/ import các package này (đã grep xác nhận) - cài sẵn chỉ tốn dung lượng
-# image + thời gian build vô ích.
+# cả qua `docker exec <container> pytest`). requirements-ai.txt cài RIÊNG ở
+# layer dưới (task 6.1.1) - xem giải thích tách layer ngay bên dưới.
 COPY requirements-core.txt requirements-test.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements-core.txt -r requirements-test.txt
 
-# TODO (task 6.1 - AI Integration): thêm layer riêng cài requirements-ai.txt
-# tại đây khi bắt đầu code AI Agent - giữ TÁCH layer với requirements-core.txt
-# ở trên để rebuild AI deps không làm invalidate cache của layer core (2 layer
-# cache độc lập, đổi 1 bên không phải cài lại bên kia). Bỏ comment 2 dòng dưới:
-# COPY requirements-ai.txt .
-# RUN pip install --no-cache-dir -r requirements-ai.txt
+# task 6.1.1 - AI Agent bắt đầu code (docs/KNOWN_TODOS.md #4, Đã xử lý): cài
+# requirements-ai.txt (langchain, langchain-openai) TÁCH layer với
+# requirements-core.txt ở trên - đổi 1 bên không làm invalidate cache của
+# bên kia.
+COPY requirements-ai.txt .
+RUN pip install --no-cache-dir -r requirements-ai.txt
 
 # Copy code SAU cùng - đổi code không làm invalidate cache của các layer install ở trên.
 COPY . .
