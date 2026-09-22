@@ -26,6 +26,7 @@ def test_openapi_has_all_module_tags(client: TestClient) -> None:
         "AI Agent / Chat",
         "Notification",
         "Dashboard Admin",
+        "Inventory Admin",
         "Health Check",
     }
 
