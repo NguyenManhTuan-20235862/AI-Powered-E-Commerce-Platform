@@ -57,9 +57,11 @@ def get_my_profile(current_user: Annotated[User, Depends(get_current_user)]) -> 
 def update_my_profile(
     payload: UserUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
 ) -> APIResponse[UserResponse]:
     """Cập nhật thông tin cá nhân (tên, SĐT, địa chỉ). Yêu cầu: Customer, Admin."""
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")
+    user = user_service.update_profile(db, current_user, payload)
+    return success_response(data=UserResponse.model_validate(user), message="Cập nhật thông tin thành công")
 
 
 @router.put(
@@ -71,9 +73,14 @@ def update_my_profile(
 def change_my_password(
     payload: ChangePasswordRequest,
     current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
 ) -> MessageResponse:
     """Đổi mật khẩu. Yêu cầu: Customer, Admin."""
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai")
+    try:
+        user_service.change_password(db, current_user, payload)
+    except user_service.UserServiceError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return MessageResponse(message="Đổi mật khẩu thành công")
 
 
 @router.get(
@@ -135,10 +142,22 @@ def update_user_status(
     current_user: Annotated[User, Depends(require_role(UserRole.admin))],
     db: Annotated[Session, Depends(get_db)],
 ) -> APIResponse[UserResponse]:
-    """Khóa/mở khóa tài khoản user. Yêu cầu: Admin."""
+    """Khóa/mở khóa tài khoản user. Yêu cầu: Admin.
+
+    Admin KHÔNG được khóa/mở khóa BẤT KỲ tài khoản Admin nào (kể cả chính
+    mình) - chỉ áp dụng được cho tài khoản Customer. Chặn luôn cả 2 trường
+    hợp (tự khóa chính mình VÀ khóa Admin khác) bằng 1 điều kiện duy nhất
+    (`user.role == UserRole.admin`) - quyết định đã xác nhận: tránh 1 Admin
+    duy nhất tự khóa hết hệ thống hoặc nhiều Admin khóa lẫn nhau.
+    """
     user = user_service.get_user_by_id(db, user_id)
     if user is None:
         raise _not_found()
+    if user.role == UserRole.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Không thể khóa/mở khóa tài khoản Admin",
+        )
     user_service.update_user_status(db, user, payload.is_active)
     return success_response(
         data=UserResponse.model_validate(user),

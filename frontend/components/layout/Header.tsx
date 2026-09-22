@@ -99,6 +99,13 @@ export function Header() {
                     >
                       Đơn hàng của tôi
                     </Link>
+                    <Link
+                      href="/profile"
+                      onClick={() => setIsUserMenuOpen(false)}
+                      className="block rounded-xl px-3 py-2 text-sm text-foreground hover:bg-primary-100"
+                    >
+                      Hồ sơ của tôi
+                    </Link>
                     <button
                       type="button"
                       onClick={handleLogout}
@@ -151,6 +158,9 @@ export function Header() {
                 <span className="text-foreground">{displayName}</span>
                 <Link href="/orders" onClick={() => setIsMobileMenuOpen(false)} className="text-foreground-secondary hover:text-foreground">
                   Đơn hàng của tôi
+                </Link>
+                <Link href="/profile" onClick={() => setIsMobileMenuOpen(false)} className="text-foreground-secondary hover:text-foreground">
+                  Hồ sơ của tôi
                 </Link>
                 <button type="button" onClick={handleLogout} className="text-left text-foreground-secondary hover:text-foreground">
                   Đăng xuất

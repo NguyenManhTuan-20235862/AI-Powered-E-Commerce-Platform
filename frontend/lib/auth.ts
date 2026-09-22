@@ -43,6 +43,17 @@ export function setTokens(accessToken: string, refreshToken: string, options?: {
   other.removeItem(REFRESH_TOKEN_KEY);
 }
 
+/**
+ * Access token hiện tại đang nằm ở localStorage (persist=true, "Ghi nhớ đăng
+ * nhập") hay sessionStorage (persist=false) - dùng để response interceptor
+ * (`lib/axios.ts`) ghi LẠI ĐÚNG storage cũ sau khi refresh access token mới,
+ * không tự ý đổi persist mode giữa chừng phiên làm việc.
+ */
+export function isTokenPersisted(): boolean {
+  if (typeof window === "undefined") return true;
+  return window.localStorage.getItem(TOKEN_KEY) !== null;
+}
+
 export function clearTokens(): void {
   removeToken();
   if (typeof window === "undefined") return;

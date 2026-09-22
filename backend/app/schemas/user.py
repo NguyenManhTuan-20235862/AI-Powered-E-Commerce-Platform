@@ -59,6 +59,15 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    """Body optional cho `POST /auth/logout` - `refresh_token` KHÔNG bắt buộc
+    (client cũ/đã mất refresh token vẫn logout được, chỉ access token bị
+    blacklist) nhưng gửi kèm thì được blacklist LUÔN, đúng docs/API_SPEC.md
+    ("đưa refresh token vào Redis blacklist")."""
+
+    refresh_token: str | None = None
+
+
 class TokenPair(BaseModel):
     access_token: str
     refresh_token: str

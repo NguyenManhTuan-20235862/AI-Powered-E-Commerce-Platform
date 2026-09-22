@@ -78,9 +78,12 @@ def is_token_blacklisted(redis_client: redis.Redis, jti: str) -> bool:
         return False
 
 
-def blacklist_access_token(redis_client: redis.Redis, payload: dict) -> None:
-    """Đưa 1 access token (đã decode - `payload` từ `get_token_payload`) vào
-    Redis blacklist (task 3.3.2, dùng ở `POST /auth/logout`).
+def blacklist_token(redis_client: redis.Redis, payload: dict) -> None:
+    """Đưa 1 token JWT bất kỳ (đã decode - access HOẶC refresh, đều có sẵn
+    `jti`/`exp`) vào Redis blacklist (task 3.3.2, dùng ở `POST /auth/logout`
+    cho access token; task auth/refresh hardening dùng LẠI ĐÚNG hàm này cho
+    refresh token client gửi kèm lúc logout - không cần 2 hàm gần giống hệt
+    nhau, logic chỉ phụ thuộc `jti`/`exp`, không phụ thuộc `type`).
 
     TTL của key Redis = ĐÚNG bằng thời gian còn lại tới lúc token hết hạn tự
     nhiên (`exp` trong payload, Unix timestamp) - KHÔNG lưu lâu hơn cần
@@ -108,6 +111,56 @@ def blacklist_access_token(redis_client: redis.Redis, payload: dict) -> None:
         redis_client.set(_blacklist_key(jti), "1", ex=ttl_seconds)
     except redis.RedisError:
         logger.warning("Redis lỗi lúc blacklist token lúc logout (jti=%s) - bỏ qua, vẫn coi logout thành công", jti, exc_info=True)
+
+
+def try_decode_token(token: str) -> dict | None:
+    """Decode JWT bất kỳ (access hoặc refresh) - trả `None` nếu sai chữ ký/hết
+    hạn thay vì raise, dùng cho chỗ xử lý BEST-EFFORT (VD `POST /auth/logout`
+    blacklist thêm refresh token nếu client gửi kèm - refresh token không hợp
+    lệ/đã hết hạn không nên khiến cả logout thất bại)."""
+    settings = get_settings()
+    try:
+        return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    except JWTError:
+        return None
+
+
+def get_user_from_refresh_token(db: Session, redis_client: redis.Redis, refresh_token: str) -> User:
+    """Verify refresh token (chữ ký/hạn/`type=refresh`) + check blacklist +
+    load User còn active - dùng ở `POST /auth/refresh`.
+
+    Cùng nguyên tắc `get_current_user` (access token): 1 lỗi 401 DUY NHẤT cho
+    MỌI lý do (sai chữ ký/hết hạn/sai type/bị blacklist/user không tồn tại
+    hoặc đã bị khóa) - không lộ chi tiết cụ thể ra ngoài. Không tách thành
+    FastAPI dependency riêng như access token (`get_token_payload`/
+    `get_current_user`) vì refresh token đi qua request body (`RefreshTokenRequest`),
+    không qua `Authorization` header/`OAuth2PasswordBearer` - 1 hàm thường gọi
+    trực tiếp trong router là đủ, không cần dependency chain.
+    """
+    payload = try_decode_token(refresh_token)
+    if payload is None:
+        raise _unauthorized()
+
+    if payload.get("type") != "refresh":
+        raise _unauthorized()
+
+    jti = payload.get("jti")
+    if jti and is_token_blacklisted(redis_client, jti):
+        raise _unauthorized()
+
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise _unauthorized()
+
+    try:
+        user = db.get(User, int(user_id))
+    except (TypeError, ValueError):
+        raise _unauthorized()
+
+    if user is None or not user.is_active:
+        raise _unauthorized()
+
+    return user
 
 
 def get_token_payload(token: Annotated[str | None, Depends(oauth2_scheme)]) -> dict:

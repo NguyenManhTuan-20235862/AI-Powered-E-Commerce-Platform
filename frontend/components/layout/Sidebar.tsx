@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/admin/inventory", label: "Quản lý kho" },
   { href: "/admin/orders", label: "Quản lý đơn hàng" },
   { href: "/admin/users", label: "Người dùng" },
+  { href: "/profile", label: "Hồ sơ của tôi" },
 ];
 
 /** Điều hướng Admin - responsive: cột cố định trên desktop (md+), drawer trượt ra trên mobile/tablet. */

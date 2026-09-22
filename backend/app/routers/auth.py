@@ -13,15 +13,17 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db, get_redis
 from app.core.openapi_responses import auth_responses
 from app.core.security import (
-    blacklist_access_token,
+    blacklist_token,
     create_access_token,
     create_refresh_token,
     get_current_user,
     get_token_payload,
+    get_user_from_refresh_token,
+    try_decode_token,
 )
 from app.models.user import User
 from app.schemas.common import APIResponse, MessageResponse, success_response
-from app.schemas.user import RefreshTokenRequest, TokenPair, UserCreate, UserLogin, UserResponse
+from app.schemas.user import LogoutRequest, RefreshTokenRequest, TokenPair, UserCreate, UserLogin, UserResponse
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -75,10 +77,28 @@ def login(payload: UserLogin, db: Annotated[Session, Depends(get_db)]) -> APIRes
     "/refresh",
     response_model=APIResponse[TokenPair],
     summary="Làm mới access token",
+    responses=auth_responses(),
 )
-def refresh(payload: RefreshTokenRequest) -> APIResponse[TokenPair]:
-    """Làm mới access token bằng refresh token. Public."""
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai - task 1.3")
+def refresh(
+    payload: RefreshTokenRequest,
+    db: Annotated[Session, Depends(get_db)],
+    redis_client: Annotated[redis.Redis, Depends(get_redis)],
+) -> APIResponse[TokenPair]:
+    """Làm mới access token bằng refresh token. Public (chính refresh token
+    trong body mới là thứ xác thực request này, không phải `Authorization`
+    header).
+
+    KHÔNG xoay vòng (rotate) refresh token - chỉ cấp access token MỚI, trả lại
+    NGUYÊN refresh token client đã gửi lên (quyết định đã xác nhận: đơn giản
+    hơn, khớp mức độ phức tạp hiện tại của dự án - refresh token vẫn dùng lại
+    được tới khi tự hết hạn hoặc bị revoke lúc logout, xem `POST /auth/logout`).
+    """
+    user = get_user_from_refresh_token(db, redis_client, payload.refresh_token)
+    access_token = create_access_token(user_id=user.id, role=user.role.value)
+    return APIResponse(
+        data=TokenPair(access_token=access_token, refresh_token=payload.refresh_token),
+        message="Làm mới access token thành công",
+    )
 
 
 @router.post(
@@ -91,19 +111,26 @@ def logout(
     # current_user: chỉ dùng làm cổng xác thực (401 nếu token đã hết hạn/sai/
     # đã bị blacklist từ trước) - handler không cần current_user.id.
     current_user: Annotated[User, Depends(get_current_user)],
-    payload: Annotated[dict, Depends(get_token_payload)],
+    token_payload: Annotated[dict, Depends(get_token_payload)],
     redis_client: Annotated[redis.Redis, Depends(get_redis)],
+    payload: LogoutRequest | None = None,
 ) -> MessageResponse:
-    """Đăng xuất - đưa ACCESS token đang dùng vào Redis blacklist (task 3.3.2).
-
-    CHỈ blacklist access token, KHÔNG blacklist refresh token - `POST /auth/refresh`
-    hiện vẫn `501` (chưa có logic thật nào tiêu thụ refresh token), nên chưa
-    có đường khai thác thật nào cần chặn ở phía refresh token; xem
-    docs/KNOWN_TODOS.md cho việc cần làm khi `/auth/refresh` implement thật.
+    """Đăng xuất - đưa ACCESS token đang dùng vào Redis blacklist (task 3.3.2),
+    VÀ đưa LUÔN refresh token vào blacklist nếu client gửi kèm trong body
+    (`LogoutRequest.refresh_token`, optional - đúng docs/API_SPEC.md "đưa
+    refresh token vào Redis blacklist"). Refresh token sai/hết hạn/thiếu
+    trong body KHÔNG làm logout thất bại - best-effort, access token blacklist
+    (xác thực bằng `Authorization` header) mới là phần bắt buộc.
 
     Yêu cầu: Customer, Admin.
     """
-    blacklist_access_token(redis_client, payload)
+    blacklist_token(redis_client, token_payload)
+
+    if payload and payload.refresh_token:
+        refresh_payload = try_decode_token(payload.refresh_token)
+        if refresh_payload and refresh_payload.get("type") == "refresh":
+            blacklist_token(redis_client, refresh_payload)
+
     return MessageResponse(message="Đăng xuất thành công")
 
 
