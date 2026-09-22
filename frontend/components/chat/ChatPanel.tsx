@@ -27,19 +27,26 @@ const STATUS_LABEL: Record<ChatConnectionStatus, string> = {
 export function ChatPanel({
   messages,
   status,
+  isStreaming,
   onSend,
   onRetry,
   onClose,
 }: {
   messages: ChatMessageItem[];
   status: ChatConnectionStatus;
+  isStreaming: boolean;
   onSend: (text: string) => void;
   onRetry: () => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const canSend = status === "open" && draft.trim().length > 0;
+  const canSend = status === "open" && !isStreaming && draft.trim().length > 0;
+  // Đang chờ token ĐẦU TIÊN của lượt trả lời (task 6.1.2) - đã gửi câu hỏi
+  // (isStreaming=true) nhưng chunk đầu chưa tới (tin cuối cùng vẫn là của
+  // "user", chưa có bubble "assistant" nào được tạo - xem useChatSocket.ts).
+  // Hiện typing indicator (3 chấm) thay cho bubble trong khoảng chờ này.
+  const isAwaitingFirstChunk = isStreaming && messages[messages.length - 1]?.role !== "assistant";
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -108,6 +115,23 @@ export function ChatPanel({
         ) : (
           messages.map((item) => <ChatMessage key={item.id} item={item} />)
         )}
+        {isAwaitingFirstChunk && (
+          <div className="mb-3 flex items-start gap-3" aria-label="Trợ lý đang soạn tin nhắn">
+            <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary-100 shadow-sm">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="text-secondary">
+                <rect x="5" y="8" width="14" height="10" rx="3" />
+                <path d="M9 8V6a3 3 0 0 1 6 0v2" strokeLinecap="round" />
+                <circle cx="9.5" cy="13" r="1" fill="currentColor" stroke="none" />
+                <circle cx="14.5" cy="13" r="1" fill="currentColor" stroke="none" />
+              </svg>
+            </div>
+            <div className="flex items-center gap-1.5 rounded-3xl rounded-tl-sm border border-border bg-secondary-100 px-5 py-4">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground-muted [animation-delay:-0.3s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground-muted [animation-delay:-0.15s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground-muted" />
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -134,8 +158,8 @@ export function ChatPanel({
             type="text"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            disabled={status !== "open"}
-            placeholder="Nhập tin nhắn..."
+            disabled={status !== "open" || isStreaming}
+            placeholder={isStreaming ? "Đang chờ Vun trả lời..." : "Nhập tin nhắn..."}
             maxLength={2000}
             aria-label="Nhập tin nhắn cho Vun"
             className="flex-1 rounded-full border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-foreground-muted focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
