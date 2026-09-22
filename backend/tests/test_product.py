@@ -337,6 +337,22 @@ def test_list_products_admin_filters_by_is_active(client: TestClient, db: Sessio
     assert inactive_ids == {inactive_product["id"]}
 
 
+def test_list_products_admin_filters_by_product_id(client: TestClient, db: Session) -> None:
+    """`?product_id=` (task "Hoàn thiện quản trị sản phẩm, danh mục và kho")
+    - dùng cho link "tới sản phẩm" từ trang lịch sử kho, PHẢI thấy được CẢ
+    sản phẩm đã ẩn (khác trang chi tiết public)."""
+    category = _create_category(db)
+    headers = _admin_headers(db)
+    target = _create_product(client, headers, category.id, name="Sản phẩm mục tiêu")
+    other = _create_product(client, headers, category.id, name="Sản phẩm khác")
+    client.delete(f"/api/v1/products/{target['id']}", headers=headers)
+
+    response = client.get("/api/v1/products/admin", params={"product_id": target["id"]}, headers=headers)
+    items = response.json()["data"]["items"]
+    assert [item["id"] for item in items] == [target["id"]]
+    assert other["id"] not in [item["id"] for item in items]
+
+
 def test_list_products_filter_by_category(client: TestClient, db: Session) -> None:
     category_a = _create_category(db, name="A")
     category_b = _create_category(db, name="B")
@@ -577,3 +593,53 @@ def test_upload_product_image_requires_admin(client: TestClient, db: Session) ->
         files={"file": ("test.png", _TINY_PNG, "image/png")},
     )
     assert response.status_code == 403
+
+
+def test_upload_product_image_rejects_content_not_matching_real_image(client: TestClient, db: Session) -> None:
+    """`Content-Type` khai `image/png` nhưng NỘI DUNG thật không phải ảnh
+    (VD file text đổi tên/giả `Content-Type`) - PHẢI bị từ chối dựa trên
+    magic byte thật đọc từ nội dung file, không chỉ tin header client tự
+    khai (task "Hoàn thiện quản trị sản phẩm, danh mục và kho")."""
+    category = _create_category(db)
+    headers = _admin_headers(db)
+    created = _create_product(client, headers, category.id)
+
+    response = client.post(
+        f"/api/v1/products/{created['id']}/image",
+        headers=headers,
+        files={"file": ("fake.png", b"khong phai anh that, chi la text thuong", "image/png")},
+    )
+    assert response.status_code == 400
+
+
+def test_upload_product_image_replacing_deletes_old_file(client: TestClient, db: Session) -> None:
+    """Đóng `docs/KNOWN_TODOS.md` #18 - upload ảnh MỚI phải xóa file ảnh CŨ
+    khỏi đĩa (SAU khi ảnh mới đã lưu thành công), không để lại file rác."""
+    from app.core.storage import UPLOAD_ROOT
+
+    category = _create_category(db)
+    headers = _admin_headers(db)
+    created = _create_product(client, headers, category.id)
+
+    first = client.post(
+        f"/api/v1/products/{created['id']}/image",
+        headers=headers,
+        files={"file": ("first.png", _TINY_PNG, "image/png")},
+    )
+    first_url = first.json()["data"]["image_url"]
+    first_path = UPLOAD_ROOT / first_url.split("/uploads/", 1)[1]
+    assert first_path.exists()
+
+    second = client.post(
+        f"/api/v1/products/{created['id']}/image",
+        headers=headers,
+        files={"file": ("second.png", _TINY_PNG, "image/png")},
+    )
+    second_url = second.json()["data"]["image_url"]
+    second_path = UPLOAD_ROOT / second_url.split("/uploads/", 1)[1]
+
+    try:
+        assert not first_path.exists(), "Ảnh cũ phải bị xóa sau khi upload ảnh mới"
+        assert second_path.exists()
+    finally:
+        second_path.unlink(missing_ok=True)

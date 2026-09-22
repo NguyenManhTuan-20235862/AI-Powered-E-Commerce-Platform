@@ -15,7 +15,7 @@ from app.core.cache import get_or_set_cache, invalidate_by_prefix
 from app.core.database import get_db, get_redis
 from app.core.openapi_responses import auth_responses
 from app.core.security import require_role
-from app.core.storage import save_product_image
+from app.core.storage import delete_product_image, save_product_image
 from app.models.user import User, UserRole
 from app.schemas.common import APIResponse, MessageResponse, PaginatedResponse, PaginationParams, success_response
 from app.schemas.product import ProductCreate, ProductImageRead, ProductRead, ProductUpdate
@@ -98,11 +98,14 @@ def list_products_admin(
     category_id: int | None = None,
     search: str | None = None,
     is_active: bool | None = None,
+    product_id: int | None = None,
 ) -> APIResponse[PaginatedResponse[ProductRead]]:
     """Danh sách sản phẩm cho trang quản lý (task 4.4.1) - KHÔNG lọc
     `is_active` mặc định (khác `GET /products` public), lọc được qua
     `?is_active=true/false` nếu Admin muốn xem riêng nhóm đang hiện/đã ẩn.
-    Yêu cầu: Admin.
+    `?product_id=` (task "Hoàn thiện quản trị sản phẩm, danh mục và kho") lọc
+    ĐÚNG 1 sản phẩm - dùng cho link "tới sản phẩm" từ trang lịch sử kho. Yêu
+    cầu: Admin.
 
     Đăng ký TRƯỚC `GET /{id_or_slug}` (path cố định `/admin` phải đứng trước
     route templated, giống quy ước đã áp dụng cho `/orders/admin` - nếu
@@ -115,6 +118,7 @@ def list_products_admin(
         category_id=category_id,
         search=search,
         is_active=is_active,
+        product_id=product_id,
     )
     return success_response(data=result)
 
@@ -258,14 +262,20 @@ def upload_product_image(
     file: UploadFile = File(...),
 ) -> APIResponse[ProductImageRead]:
     """Upload ảnh sản phẩm - lưu local (xem `app/core/storage.py`), cập nhật
-    `products.image_url`. Yêu cầu: Admin."""
+    `products.image_url`. Yêu cầu: Admin.
+
+    Xóa ảnh CŨ (nếu có) SAU KHI ảnh mới đã lưu + commit thành công (đóng
+    `docs/KNOWN_TODOS.md` #18) - giữ nguyên thứ tự này để không mất ảnh cũ
+    nếu bước lưu ảnh mới thất bại giữa chừng."""
     product = product_service.get_product_by_id(db, product_id)
     if product is None:
         raise _not_found()
 
+    old_image_url = product.image_url
     image_url = save_product_image(file, product_id)
     product.image_url = image_url
     db.commit()
+    delete_product_image(old_image_url)
 
     invalidate_by_prefix(redis_client, product_service.PRODUCT_LIST_CACHE_PREFIX)
     return success_response(data=ProductImageRead(image_url=image_url), message="Upload ảnh thành công")

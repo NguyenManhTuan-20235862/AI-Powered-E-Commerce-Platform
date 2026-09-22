@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { extractApiErrorMessage } from "@/lib/api-error";
 import { api } from "@/lib/axios";
+import { buildCategoryTreeOrder } from "@/lib/category-tree";
 import { categoryFormSchema, type CategoryFormValues } from "@/lib/validations/category";
 import type { ApiResponse } from "@/types/common";
 import type { Category, CategoryCreatePayload, CategoryUpdatePayload } from "@/types/category";
@@ -29,6 +30,11 @@ import type { Category, CategoryCreatePayload, CategoryUpdatePayload } from "@/t
  * khác trong danh sách, chọn cháu đó làm cha) - Backend vẫn là nơi validate
  * đầy đủ cuối cùng (xem `category_service.would_create_cycle()`), lỗi 400
  * từ Backend hiện qua toast với message thật, không phải lỗi generic.
+ *
+ * Nhãn từng option THỤT LỀ theo cấp (qua `buildCategoryTreeOrder()`, cùng
+ * helper `CategoryTable.tsx` dùng - task "Hoàn thiện quản trị sản phẩm, danh
+ * mục và kho") - bản cũ liệt kê phẳng theo alphabet, cây sâu dễ chọn nhầm vì
+ * không thấy được category nào đang nằm ở nhánh nào.
  */
 export function CategoryFormModal({
   isOpen,
@@ -44,7 +50,7 @@ export function CategoryFormModal({
   onSaved: () => void;
 }) {
   const isEditMode = category !== null;
-  const parentOptions = categories.filter((c) => c.id !== category?.id);
+  const parentOptions = buildCategoryTreeOrder(categories).filter(({ category: c }) => c.id !== category?.id);
 
   const {
     register,
@@ -142,8 +148,9 @@ export function CategoryFormModal({
               {...register("parent_id")}
             >
               <option value="">Không có</option>
-              {parentOptions.map((option) => (
+              {parentOptions.map(({ category: option, depth }) => (
                 <option key={option.id} value={option.id}>
+                  {"— ".repeat(depth)}
                   {option.name}
                 </option>
               ))}
