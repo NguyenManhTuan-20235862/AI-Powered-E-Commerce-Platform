@@ -480,6 +480,32 @@ def test_list_all_orders_without_search_param_is_backward_compatible(client: Tes
     assert response.json()["data"]["total"] == 1
 
 
+def test_list_all_orders_filter_by_user_id(client: TestClient, db: Session) -> None:
+    """task "Hoàn thiện quản lý tài khoản Admin" - `?user_id=` cho tab "Lịch
+    sử đơn" ở trang chi tiết user Admin, tái dùng tham số `user_id` đã có sẵn
+    trong `order_service.list_orders()` (trước đó Customer-only qua
+    `GET /orders`)."""
+    category = _create_category(db)
+    product = _create_product(db, category.id, stock_quantity=10)
+    customer_a = _create_customer(db)
+    customer_b = _create_customer(db)
+    _add_to_cart(client, _headers_for(customer_a), product.id)
+    client.post("/api/v1/orders", json=VALID_CHECKOUT_PAYLOAD, headers=_headers_for(customer_a))
+    _add_to_cart(client, _headers_for(customer_b), product.id)
+    client.post("/api/v1/orders", json=VALID_CHECKOUT_PAYLOAD, headers=_headers_for(customer_b))
+    _add_to_cart(client, _headers_for(customer_b), product.id)
+    client.post("/api/v1/orders", json=VALID_CHECKOUT_PAYLOAD, headers=_headers_for(customer_b))
+
+    admin_headers = _admin_headers(db)
+    response = client.get("/api/v1/orders/admin", params={"user_id": customer_a.id}, headers=admin_headers)
+    data = response.json()["data"]
+    assert data["total"] == 1
+    assert data["items"][0]["user_id"] == customer_a.id
+
+    response_b = client.get("/api/v1/orders/admin", params={"user_id": customer_b.id}, headers=admin_headers)
+    assert response_b.json()["data"]["total"] == 2
+
+
 def test_update_order_status_requires_admin(client: TestClient, db: Session) -> None:
     category = _create_category(db)
     product = _create_product(db, category.id)

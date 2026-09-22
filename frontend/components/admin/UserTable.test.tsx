@@ -63,6 +63,7 @@ const noopProps = {
   pageSize: 10,
   onPageChange: vi.fn(),
   onChanged: vi.fn(),
+  onViewDetail: vi.fn(),
 };
 
 describe("UserTable (Quản lý người dùng Admin) - badge + hành động khóa/mở khóa", () => {
@@ -113,6 +114,21 @@ describe("UserTable (Quản lý người dùng Admin) - badge + hành động kh
     expect(screen.getByRole("button", { name: "Mở khóa" })).toBeInTheDocument();
   });
 
+  it("HIỆN nút 'Chi tiết' cho MỌI role (kể cả admin) - chỉ nút Khóa mới bị ẩn ở admin", () => {
+    render(<UserTable {...noopProps} users={[adminUser, activeCustomer]} />);
+    expect(screen.getAllByRole("button", { name: "Chi tiết" })).toHaveLength(2);
+  });
+
+  it("bấm 'Chi tiết' gọi onViewDetail với đúng user.id", async () => {
+    const user = userEvent.setup();
+    const onViewDetail = vi.fn();
+    render(<UserTable {...noopProps} users={[activeCustomer]} onViewDetail={onViewDetail} />);
+
+    await user.click(screen.getByRole("button", { name: "Chi tiết" }));
+
+    expect(onViewDetail).toHaveBeenCalledWith(2);
+  });
+
   it("bấm 'Khóa' nhưng KHÔNG xác nhận confirm() -> KHÔNG gọi API", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "confirm").mockReturnValue(false);
@@ -134,7 +150,9 @@ describe("UserTable (Quản lý người dùng Admin) - badge + hành động kh
     await user.click(screen.getByRole("button", { name: "Khóa" }));
 
     await waitFor(() => expect(mockPut).toHaveBeenCalledWith("/users/2/status", { is_active: false }));
-    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    // onChanged nhận ĐÚNG AdminUser mới nhất từ response PUT (cha patch 1
+    // dòng cục bộ, KHÔNG gọi lại fetchUsers() toàn bảng).
+    await waitFor(() => expect(onChanged).toHaveBeenCalledWith({ ...activeCustomer, is_active: false }));
   });
 
   it("bấm 'Mở khóa' KHÔNG cần confirm() - gọi thẳng PUT với is_active=true", async () => {
@@ -148,7 +166,7 @@ describe("UserTable (Quản lý người dùng Admin) - badge + hành động kh
 
     expect(confirmSpy).not.toHaveBeenCalled();
     await waitFor(() => expect(mockPut).toHaveBeenCalledWith("/users/3/status", { is_active: true }));
-    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    await waitFor(() => expect(onChanged).toHaveBeenCalledWith({ ...lockedCustomer, is_active: true }));
   });
 
   it("gõ vào ô search gọi onSearchChange với đúng giá trị", async () => {

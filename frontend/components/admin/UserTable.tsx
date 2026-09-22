@@ -50,15 +50,28 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
  * `OrderTable.tsx` - quy mô đồ án không cần thư viện table).
  *
  * Nút "Khóa"/"Mở khóa" CỐ TÌNH KHÔNG hiện ở hàng `role === "admin"` (khớp
- * ĐÚNG thiết kế Stitch - cột "Hành động" của user Admin chỉ có "—") - không
- * phải giới hạn ở Backend (API cho phép đổi `is_active` của BẤT KỲ user
- * nào, kể cả Admin khác) mà là quyết định UI, tránh Admin tự khóa nhau qua
- * click nhầm; API vẫn gọi được trực tiếp nếu thật sự cần (ngoài phạm vi
- * UI này).
+ * ĐÚNG thiết kế Stitch - cột "Hành động" của user Admin chỉ có "—") - ĐÃ
+ * khớp thêm giới hạn Backend thật (task "Hoàn thiện quản lý tài khoản
+ * Admin"): `PUT /users/{id}/status` giờ trả 403 nếu target là BẤT KỲ Admin
+ * nào (kể cả tự khóa chính mình, xem `app/routers/user.py`) - UI ẩn nút
+ * trước để tránh 1 request 403 vô ích, KHÔNG còn là giới hạn UI đơn thuần
+ * như trước (trước đây API cho phép, chỉ UI tự chặn).
  *
  * `window.confirm()` trước khi khóa (hành động nhạy cảm) - cùng pattern
  * `OrderCard.tsx:handleCancel()`/`OrderStatusSelect.tsx` - CHỈ confirm lúc
  * KHÓA (mở khóa không cần, không có rủi ro tương đương).
+ *
+ * Nút "Chi tiết" (mọi role, kể cả Admin - xem là được, chỉ KHÓA mới chặn) mở
+ * `UserDetailModal` (cha quản lý qua `onViewDetail`) - hiện thông tin đầy đủ
+ * + lịch sử đơn hàng, đóng `GET /users/{id}` (trước đó không nơi nào gọi).
+ *
+ * Khóa/mở khóa xong KHÔNG gọi lại `fetchUsers()` (toàn bảng) - `onChanged`
+ * nhận thẳng `AdminUser` mới nhất từ response `PUT` (đã có sẵn, trước đây bỏ
+ * qua), cha (`page.tsx`) patch ĐÚNG 1 dòng trong state cục bộ. Đánh đổi đã
+ * chấp nhận: nếu đang lọc theo `isActive` và dòng vừa đổi không còn khớp bộ
+ * lọc, dòng đó vẫn hiện tạm (không tự biến mất) tới lần fetch tự nhiên kế
+ * tiếp (đổi trang/filter/tìm kiếm) - đơn giản hơn hẳn so với tự đồng bộ lại
+ * `total`/`totalPages` cho 1 tình huống không thường xuyên.
  */
 export function UserTable({
   users,
@@ -75,6 +88,7 @@ export function UserTable({
   pageSize,
   onPageChange,
   onChanged,
+  onViewDetail,
 }: {
   users: AdminUser[];
   isLoading: boolean;
@@ -89,7 +103,11 @@ export function UserTable({
   total: number;
   pageSize: number;
   onPageChange: (page: number) => void;
-  onChanged: () => void;
+  // Nhận LUÔN `AdminUser` mới nhất từ response `PUT /users/{id}/status` (đã
+  // có sẵn, trước đây chỉ đọc message rồi bỏ) - cha patch thẳng dòng đó
+  // trong state cục bộ, KHÔNG cần `fetchUsers()` lại toàn bảng.
+  onChanged: (updated: AdminUser) => void;
+  onViewDetail: (userId: number) => void;
 }) {
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const { start, end } = formatPaginationRange(page, pageSize, total);
@@ -102,9 +120,9 @@ export function UserTable({
 
     setUpdatingId(user.id);
     try {
-      await api.put<ApiResponse<AdminUser>>(`/users/${user.id}/status`, { is_active: !user.is_active });
+      const { data } = await api.put<ApiResponse<AdminUser>>(`/users/${user.id}/status`, { is_active: !user.is_active });
       toast.success(user.is_active ? "Đã khóa tài khoản" : "Đã mở khóa tài khoản");
-      onChanged();
+      onChanged(data.data);
     } catch (err) {
       toast.error(extractApiErrorMessage(err, "Cập nhật trạng thái thất bại. Vui lòng thử lại."));
     } finally {
@@ -172,7 +190,7 @@ export function UserTable({
               <th className="px-4 py-3 text-xs font-semibold text-foreground-secondary">Vai trò</th>
               <th className="px-4 py-3 text-xs font-semibold text-foreground-secondary">Ngày tham gia</th>
               <th className="px-4 py-3 text-xs font-semibold text-foreground-secondary">Trạng thái</th>
-              <th className="w-40 px-4 py-3 text-right text-xs font-semibold text-foreground-secondary">Hành động</th>
+              <th className="w-56 px-4 py-3 text-right text-xs font-semibold text-foreground-secondary">Hành động</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -201,23 +219,32 @@ export function UserTable({
                   <td className="px-4 py-2">
                     <StatusBadge isActive={user.is_active} />
                   </td>
-                  <td className="px-4 py-2 text-right">
-                    {user.role === "admin" ? (
-                      <span className="text-foreground-muted">—</span>
-                    ) : (
+                  <td className="px-4 py-2">
+                    <div className="flex items-center justify-end gap-2">
                       <button
                         type="button"
-                        onClick={() => handleToggleActive(user)}
-                        disabled={updatingId === user.id}
-                        className={
-                          user.is_active
-                            ? "rounded border border-foreground-muted px-4 py-1.5 text-sm text-foreground-secondary transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-                            : "rounded border border-primary px-4 py-1.5 text-sm text-primary transition-colors hover:bg-primary-100 disabled:cursor-not-allowed disabled:opacity-50"
-                        }
+                        onClick={() => onViewDetail(user.id)}
+                        className="rounded border border-border px-3 py-1.5 text-sm text-foreground-secondary transition-colors hover:border-primary hover:text-primary"
                       >
-                        {updatingId === user.id ? "..." : user.is_active ? "Khóa" : "Mở khóa"}
+                        Chi tiết
                       </button>
-                    )}
+                      {user.role === "admin" ? (
+                        <span className="w-[76px] text-center text-foreground-muted">—</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleActive(user)}
+                          disabled={updatingId === user.id}
+                          className={
+                            user.is_active
+                              ? "rounded border border-foreground-muted px-4 py-1.5 text-sm text-foreground-secondary transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                              : "rounded border border-primary px-4 py-1.5 text-sm text-primary transition-colors hover:bg-primary-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          }
+                        >
+                          {updatingId === user.id ? "..." : user.is_active ? "Khóa" : "Mở khóa"}
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
