@@ -303,12 +303,12 @@ session với mảng `messages` lồng bên trong). Lý do đầy đủ xem docs
 | `metadata` | `Object` (linh hoạt, không cố định field con) | NULLABLE | VD: sản phẩm AI gợi ý kèm tin nhắn, `tool_calls` (task 6.3), thông tin model/token — cấu trúc con quyết định khi có code AI Agent thật |
 | `created_at` | `Date` (UTC) | NOT NULL | Thời điểm tạo tin nhắn |
 
-### Index đề xuất (task 3.2.1 — CHỈ liệt kê, CHƯA tạo thật)
+### Index (task 3.2.1 thiết kế — task 3.2.3 tạo thật)
 
-Chưa chạy `create_index()` thật ở task này (collection còn chưa tồn tại — lazy
-create khi có write đầu tiên, xem task 2.3.2) — để task 3.2.3 (kết nối PyMongo
-thật) tạo cùng lúc với code kết nối, tránh tạo index cho collection chưa có
-document nào:
+**Đã tạo thật** qua `backend/scripts/create_mongo_indexes.py` (script chạy
+tay 1 lần, KHÔNG tự chạy lúc app khởi động — xem docstring script đó) — task
+3.2.1 chỉ thiết kế, để task 3.2.3 (kết nối PyMongo thật) tạo cùng lúc với
+code kết nối, tránh tạo index cho collection chưa có document nào:
 
 - **`(user_id, created_at)`** — chính, phục vụ `GET /ai/chat/history` (lịch sử
   của 1 user, sort theo thời gian, phân trang).
@@ -366,10 +366,10 @@ API công khai (`ReviewRead`), chỉ có ở document raw (`ReviewInDB`).
 | `created_at` | `Date` (UTC) | NOT NULL | Thời điểm viết review |
 | `updated_at` | `Date` (UTC) | NULLABLE | Thời điểm cập nhật gần nhất (VD Admin soft-delete) |
 
-### Index đề xuất — `reviews` (task 3.2.2 — CHỈ liệt kê, CHƯA tạo thật)
+### Index — `reviews` (task 3.2.2 thiết kế — task 3.2.3 tạo thật)
 
-Cùng lý do chưa tạo thật như `chat_logs` (để task 3.2.3 tạo cùng lúc với code
-kết nối PyMongo):
+**Đã tạo thật** qua `backend/scripts/create_mongo_indexes.py`, cùng lý do
+`chat_logs` ở trên (tạo cùng lúc với code kết nối PyMongo, task 3.2.3):
 
 - **`(product_id, is_deleted, created_at)`** — phục vụ `GET /products/{id}/reviews`
   (lọc theo sản phẩm + loại bỏ review đã xóa mềm, sort theo thời gian). Thêm
