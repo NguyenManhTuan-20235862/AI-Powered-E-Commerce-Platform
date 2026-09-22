@@ -277,7 +277,9 @@ thành công: gọi TƯỜNG MINH `clearCart()` (Context không tự biết `POS
 `/orders/[id]/confirmation`** (có chủ đích) — đây là bước cuối nhất thời của
 checkout, không phải thuộc tính bền vững của đơn hàng; đặt dưới
 `/orders/[id]/...` sẽ khiến trang trông như "vừa đặt xong" mỗi lần bookmark
-dù đơn có thể đã giao lâu. `/orders/[id]` hiện chỉ stub tĩnh (task 4.3.3).
+dù đơn có thể đã giao lâu. `/orders/[id]` đã hoàn thiện thật (task "Hoàn
+thiện toàn bộ luồng đơn hàng Customer") - xem đoạn riêng bên dưới, KHÔNG còn
+là stub tĩnh của task 4.3.3.
 `OrderConfirmation.tsx` (bọc `<Suspense>` vì dùng `useSearchParams()`) fetch
 LẠI `GET /orders/{id}` (không tin data từ `POST /orders` truyền qua điều
 hướng — không truyền được qua URL, và fetch lại giúp trang chịu refresh).
@@ -325,6 +327,42 @@ hiện khi `status === "pending"`, dùng `window.confirm()` (chưa có modal
 riêng, đúng quy mô đồ án) — hủy xong gọi lại `onCancelled` (cha
 `fetchOrders()` lại toàn bộ, KHÔNG tự patch state cục bộ vì đơn vừa hủy có
 thể không còn khớp tab đang xem).
+
+`OrdersView.tsx` - 2 hoàn thiện thêm (task "Hoàn thiện toàn bộ luồng đơn hàng
+Customer"): (1) `loadError` state riêng (khác `orders.length === 0`) khi
+`GET /orders` thất bại - hiện nút "Thử lại" gọi lại `fetchOrders()`, KHÔNG
+còn im lặng hiện nhầm "Bạn chưa có đơn hàng nào." cho lỗi mạng/5xx thật. (2)
+Sau mỗi fetch, nếu trang hiện tại (`?page=`) đã VƯỢT quá `total_pages` thật
+trả về VÀ danh sách rỗng (VD vừa hủy đơn CUỐI CÙNG còn hiển thị ở trang 2) -
+tự `router.replace()` lùi về trang cuối cùng còn dữ liệu (`Math.max(1,
+total_pages)`), không để lại URL trang rỗng trong lịch sử back/forward.
+
+**`app/(customer)/orders/[id]/page.tsx` + `OrderDetailView.tsx`** (hoàn thiện
+thật, thay stub cũ task 4.3.3) — `page.tsx` (Server Component) CHỈ parse +
+validate `id` (không phải số nguyên dương → "không tìm thấy" ngay, không gọi
+API biết trước 422), giao cho `OrderDetailView` (Client Component) xử lý
+fetch/state/SSE/hủy đơn, cùng cách tách `OrdersPage`/`OrdersView`.
+
+Phân biệt RÕ 4 loại lỗi `GET /orders/{id}` bằng 1 state machine
+(`LoadState`), KHÔNG dùng 1 thông báo lỗi chung chung: **401** (chưa đăng
+nhập/token hết hạn) → `router.replace("/login")` NGAY (trang này không có
+guard riêng kiểu `AdminAuthGuard`, tự xử lý dựa trên response thật của chính
+request `GET /orders/{id}`); **403** (đã đăng nhập nhưng KHÔNG phải chủ đơn)
+→ hiện thông báo + link quay lại danh sách, KHÔNG redirect (khác 401, không
+phải lỗi phiên đăng nhập); **404** (id không tồn tại) → thông báo tương tự;
+**mạng/5xx khác** → thông báo + nút "Thử lại" (gọi lại `fetchOrder()` -
+KHÔNG có ý nghĩa cho 403/404 vì lỗi đó không tự hết khi gọi lại nên 2 case
+đó cố tình không có nút này).
+
+Đồng bộ SSE (`useOrderStatusStream`, task 5.2.2) trực tiếp vào đơn đang xem —
+lọc ĐÚNG `event.order_id === orderId` (kênh Redis theo `user_id`, 1 user có
+thể có đơn KHÁC đổi trạng thái trong lúc đang xem đơn này) rồi
+**refetch lại toàn bộ** qua `GET /orders/{id}` (KHÔNG tự patch `status` cục
+bộ) — cùng nguyên tắc `OrdersView.tsx`/`OrderCard.tsx`, đảm bảo lấy đúng
+`updated_at` mới nhất từ Backend thay vì tự suy đoán 1 phần dữ liệu. Nút "Hủy
+đơn hàng" (chỉ hiện khi `status === "pending"`, cùng `window.confirm()` +
+`PUT /orders/{id}/cancel` như `OrderCard.tsx`) set thẳng state từ response
+`OrderRead` trả về, không cần refetch riêng.
 
 **`GET /notifications/orders/stream`** (SSE, task 5.2.1) — xác thực qua JWT ở
 query param (`?token=...`), cùng lý do/cách WebSocket (`EventSource` cũng
