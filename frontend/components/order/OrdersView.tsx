@@ -58,19 +58,36 @@ export function OrdersView() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const fetchOrders = useCallback(async () => {
     setIsLoading(true);
+    setLoadError(false);
     try {
       const params: Record<string, string | number> = { page, page_size: 10 };
       if (status) params.status = status;
       const { data } = await api.get<ApiResponse<PaginatedResponse<Order>>>("/orders", { params });
-      setOrders(data.data.items);
-      setTotalPages(data.data.total_pages);
+      const result = data.data;
+      // Trang hiện tại (từ URL) đã vượt quá số trang thật SAU khi fetch (VD
+      // vừa hủy đơn CUỐI CÙNG còn "pending" ở trang 2, hoặc đổi tab lọc còn
+      // ít kết quả hơn) - tự lùi về trang cuối cùng còn dữ liệu, KHÔNG hiện
+      // "chưa có đơn hàng nào" sai lệch cho 1 trang lẽ ra không tồn tại nữa.
+      // router.replace (không phải push) - tránh để lại URL trang rỗng trong
+      // lịch sử back/forward.
+      if (result.items.length === 0 && page > 1 && result.total_pages < page) {
+        const nextParams = new URLSearchParams(searchParams.toString());
+        nextParams.set("page", String(Math.max(1, result.total_pages)));
+        router.replace(`/orders?${nextParams.toString()}`);
+        return;
+      }
+      setOrders(result.items);
+      setTotalPages(result.total_pages);
+    } catch {
+      setLoadError(true);
     } finally {
       setIsLoading(false);
     }
-  }, [status, page]);
+  }, [status, page, router, searchParams]);
 
   useEffect(() => {
     fetchOrders();
@@ -123,6 +140,17 @@ export function OrdersView() {
 
       {isLoading ? (
         <div className="py-16 text-center text-foreground-muted">Đang tải...</div>
+      ) : loadError ? (
+        <div className="flex flex-col items-center gap-3 py-16 text-center">
+          <p className="text-error">Không thể tải danh sách đơn hàng. Vui lòng thử lại.</p>
+          <button
+            type="button"
+            onClick={fetchOrders}
+            className="rounded-full bg-primary px-6 py-3 font-heading text-sm text-background hover:bg-primary-hover"
+          >
+            Thử lại
+          </button>
+        </div>
       ) : orders.length === 0 ? (
         <div className="flex flex-col items-center gap-3 py-16 text-center">
           <p className="text-foreground-muted">
