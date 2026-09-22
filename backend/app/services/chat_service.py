@@ -101,11 +101,14 @@ def load_session_history(mongo_db: MongoDatabase, session_id: str) -> list[BaseM
     return history
 
 
-async def stream_agent_reply(mongo_db: MongoDatabase, session_id: str, user_message: str) -> AsyncIterator[str]:
-    """Ghép system prompt + lịch sử phiên (đã cắt bớt, KHÔNG gồm tin nhắn
-    user hiện tại - tin đó truyền riêng qua `user_message`, chưa kịp lưu vào
-    Mongo tại thời điểm hàm này chạy) thành ngữ cảnh đầy đủ, stream phản hồi
-    LLM theo từng chunk text.
+async def stream_agent_reply(mongo_db: MongoDatabase, session_id: str) -> AsyncIterator[str]:
+    """Ghép system prompt + lịch sử phiên đã lưu (gồm cả tin nhắn user vừa
+    nhận) thành ngữ cảnh đầy đủ, rồi stream phản hồi LLM theo từng chunk text.
+
+    Router luôn lưu tin nhắn user thành công TRƯỚC khi gọi hàm này. Vì vậy
+    không nhận/truyền lại `user_message` riêng: thêm nó lần nữa sau
+    `load_session_history()` sẽ khiến cùng một câu hỏi xuất hiện hai lần liên
+    tiếp trong prompt gửi LLM.
 
     Router (`app/routers/ai_chat.py`) gọi hàm NÀY thay vì gọi thẳng
     `astream_llm()` - giữ toàn bộ logic "hội thoại" (system prompt/lịch sử)
@@ -113,6 +116,6 @@ async def stream_agent_reply(mongo_db: MongoDatabase, session_id: str, user_mess
     không biết gì về `chat_logs`/session.
     """
     history = await asyncio.to_thread(load_session_history, mongo_db, session_id)
-    messages: list[BaseMessage] = [SystemMessage(content=SYSTEM_PROMPT), *history, HumanMessage(content=user_message)]
+    messages: list[BaseMessage] = [SystemMessage(content=SYSTEM_PROMPT), *history]
     async for chunk in astream_llm(messages):
         yield chunk

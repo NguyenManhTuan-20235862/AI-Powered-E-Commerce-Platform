@@ -155,7 +155,7 @@ def test_streaming_reply_sends_chunks_then_done(client: TestClient, monkeypatch:
     rồi ĐÚNG 1 `{"type": "done"}`, không xen lẫn/thiếu."""
     monkeypatch.setattr("app.services.chat_service.save_chat_log", lambda mongo_db, log: None)
 
-    async def fake_stream_agent_reply(mongo_db, session_id, user_message):
+    async def fake_stream_agent_reply(mongo_db, session_id):
         for part in ["Xin", " chào", "!"]:
             yield part
 
@@ -181,7 +181,7 @@ def test_llm_unavailable_sends_error_and_keeps_connection_usable(
     connection - gửi tiếp tin nhắn khác vẫn hoạt động bình thường."""
     monkeypatch.setattr("app.services.chat_service.save_chat_log", lambda mongo_db, log: None)
 
-    async def failing_stream_agent_reply(mongo_db, session_id, user_message):
+    async def failing_stream_agent_reply(mongo_db, session_id):
         raise LLMUnavailableError("giả lập LLM không kết nối được")
         yield  # noqa: unreachable - bắt buộc để hàm là async generator hợp lệ
 
