@@ -298,6 +298,11 @@ def _finalize_orders(db, plans: list[_OrderPlan]) -> None:
 def _seed_orders(db, demo_products: list[Product]) -> list[Order]:
     """Trả về danh sách Order MỚI vừa tạo (dùng để seed review ngay sau,
     KHÔNG cần query lại) - bỏ qua hoàn toàn customer đã có đơn từ trước."""
+    # Refresh under the same ordered row locks as checkout/inventory adjustment.
+    demo_products = [
+        db.query(Product).filter_by(id=p.id).populate_existing().with_for_update().one()
+        for p in sorted(demo_products, key=lambda p: p.id)
+    ]
     remaining_stock: dict[int, int] = {p.id: p.stock_quantity for p in demo_products}
 
     customers_to_seed: list[User] = []

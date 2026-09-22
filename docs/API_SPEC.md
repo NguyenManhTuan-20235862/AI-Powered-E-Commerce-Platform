@@ -134,7 +134,25 @@
 
 ---
 
-## 11. Health Check / System
+## 11. Inventory Admin (`/admin/inventory`)
+
+Chỉ Admin; JWT Bearer, envelope `APIResponse` chuẩn. Không dùng PUT sản phẩm để sửa tồn kho.
+
+| Method | Path | Nội dung |
+|---|---|---|
+| POST | `/admin/inventory/adjust` | Body: `product_id`, `change_quantity` (integer khác 0), `reason` (`restock` tăng, `damage` giảm, `audit` chênh lệch ±), `note` nullable tối đa 500 ký tự. Header `Idempotency-Key` bắt buộc: 1–64 ký tự ASCII chữ/số/`_`/`-`. |
+| GET | `/admin/inventory/adjustments` | Phân trang `page`/`page_size`; lọc `product_id`, `reason`, `date_from`/`date_to` (bao gồm toàn bộ ngày cuối). |
+| GET | `/admin/inventory/low-stock` | `stock_quantity < threshold` (mặc định 10, số nguyên dương); `page`/`page_size`; mặc định `is_active=true`, có thể lọc sản phẩm ẩn với `false`. Sắp tồn tăng dần rồi ID, bao gồm tồn 0. |
+
+POST trả 200 gồm `id`, `product_id`, `product_name` snapshot, `change_quantity`,
+`stock_before`, `stock_after`, `reason`, `note`, `admin_id`, `created_at`.
+404 sản phẩm không tồn tại; 409 giảm quá tồn/vượt INT hoặc cùng key khác payload;
+422 input không hợp lệ; 401/403 auth. Key duy nhất theo Admin, lưu bền cùng lịch sử;
+retry cùng payload trả lại kết quả gốc, không điều chỉnh thêm. Lịch sử không có
+API sửa/xóa và không bao gồm checkout/hủy đơn. GET trả `PaginatedResponse` chuẩn.
+Sau commit, xóa cache `products:list:*` theo cơ chế hiện có (Redis lỗi thì cache có thể trễ tới TTL).
+
+## 12. Health Check / System
 
 | Method | Path | Mô tả | Quyền truy cập | Role |
 |--------|------|-------|-----------------|------|
