@@ -22,8 +22,9 @@ và `frontend/package.json` — không có gì ngoài các file này đang thự
 **Vì sao Backend tách 4 file requirements** (quyết định kiến trúc, không tự
 đọc code suy ra được):
 - `requirements-core.txt` — cài mặc định, kể cả `Dockerfile.dev` VÀ `.prod`.
-- `requirements-ai.txt` — CHƯA cài mặc định (LangChain + langchain-openai),
-  vì CHƯA có code tích hợp AI Agent nào trong `app/`; cài kèm khi vào task 6.x.
+- `requirements-ai.txt` — LangChain + `langchain-openai`, đã cài trong CẢ
+  `Dockerfile.dev` và `Dockerfile.prod` từ task 6.1 vì `/ws/chat` hiện gọi và
+  stream LLM thật. Vẫn tách file để dependency AI có ranh giới rõ với core.
 - `requirements-test.txt` — cài trong `Dockerfile.dev`, KHÔNG cài `.prod`
   (task 2.1.2) — production không cần test framework lúc chạy thật.
 - `requirements-prod.txt` — CHỈ cài trong `Dockerfile.prod` (Gunicorn, task
@@ -38,8 +39,9 @@ re-render khó kiểm bằng mắt (VD `ProductFilters.test.tsx`). sonner (task
 DUY NHẤT trong dự án — không viết component riêng, không thêm thư viện thứ 2.
 
 **Chưa có trong repo**: `Makefile`, CI config, linter/formatter Backend (không
-ruff/black). Frontend chỉ 1 file test (`ProductFilters.test.tsx`) — chưa phải
-coverage toàn bộ component.
+ruff/black). Frontend đã có Vitest cho filters/pagination, cart/checkout,
+Admin components và hooks realtime (`useChatSocket`, `useOrderStatusStream`),
+nhưng vẫn chưa phải coverage toàn bộ component/page.
 
 `docker-compose.yml` (task 2.3.1→2.3.4+3.5.2) đủ 6 service (mysql, mongodb,
 redis, backend, frontend, product-sync-scheduler) — `docker compose up` chạy
@@ -100,7 +102,7 @@ chạy Backend NGOÀI Docker, VD cần chạy `pytest` nhanh không qua containe
 hoặc debug bằng debugger gắn trực tiếp vào process):
 ```bash
 python -m venv .venv && source .venv/Scripts/activate   # Windows Git Bash
-pip install -r requirements-core.txt -r requirements-test.txt   # + requirements-ai.txt khi làm task 6.x
+pip install -r requirements-core.txt -r requirements-ai.txt -r requirements-test.txt
 cp .env.example .env          # rồi điền giá trị thật, KHÔNG commit .env
 uvicorn app.main:app --reload  # dev server: http://localhost:8000
 pytest -q                       # chạy test
@@ -325,6 +327,29 @@ hiện khi `status === "pending"`, dùng `window.confirm()` (chưa có modal
 riêng, đúng quy mô đồ án) — hủy xong gọi lại `onCancelled` (cha
 `fetchOrders()` lại toàn bộ, KHÔNG tự patch state cục bộ vì đơn vừa hủy có
 thể không còn khớp tab đang xem).
+
+**Streaming AI `/ws/chat`** (task 6.1.1–6.1.2) — đã thay placeholder bằng
+LLM thật qua `ChatOpenAI`, đổi provider chỉ bằng nhóm biến `LLM_*` (dev dùng
+Ollama OpenAI-compatible, production có thể dùng OpenAI). Wire protocol server
+→ client là `connected` → nhiều event `chunk` → `done`; nếu LLM lỗi/không có
+token đầu trong 12 giây thì gửi `error` và GIỮ kết nối để user thử lại. Frontend
+ghép các chunk vào cùng một message assistant và khóa input bằng `isStreaming`
+cho tới `done`/`error`/disconnect. Không đặt timeout cho toàn bộ stream; độ dài
+đã chặn bởi `LLM_MAX_TOKENS`.
+
+Ngữ cảnh mỗi lượt gồm `SYSTEM_PROMPT` + tối đa 20 message `user`/`assistant`
+mới nhất của đúng `session_id`, đọc từ MongoDB theo thứ tự mới→cũ rồi đảo lại
+cũ→mới. Router PHẢI lưu message user thành công TRƯỚC khi gọi
+`stream_agent_reply()`; service đọc lại message hiện tại từ history và KHÔNG
+nhận/nối thêm `user_message` riêng — nếu nối lại sẽ gửi cùng câu hỏi hai lần
+cho LLM (regression test ở `tests/test_chat_service.py`). Chỉ lưu message
+assistant sau khi stream hoàn tất; lỗi lưu assistant sau khi client đã nhận đủ
+chỉ ghi log, không báo thất bại giả cho user.
+
+AI hiện mới hội thoại thuần: CHƯA có RAG/tool truy vấn catalog thật, nên
+`SYSTEM_PROMPT` buộc không bịa giá/tồn kho và hướng khách xem catalog. REST
+`POST /ai/chat`, history/log APIs vẫn `501`; rate limit Redis vẫn là task kế
+tiếp.
 
 **`GET /notifications/orders/stream`** (SSE, task 5.2.1) — xác thực qua JWT ở
 query param (`?token=...`), cùng lý do/cách WebSocket (`EventSource` cũng
