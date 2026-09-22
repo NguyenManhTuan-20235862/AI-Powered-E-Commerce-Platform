@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/admin/inventory", label: "Quản lý kho" },
   { href: "/admin/orders", label: "Quản lý đơn hàng" },
   { href: "/admin/users", label: "Người dùng" },
+  { href: "/admin/reviews", label: "Đánh giá" },
   { href: "/profile", label: "Hồ sơ của tôi" },
 ];
 

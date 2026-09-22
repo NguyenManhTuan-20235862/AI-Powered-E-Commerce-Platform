@@ -96,9 +96,10 @@
 
 | Method | Path | Mô tả | Quyền truy cập | Role |
 |--------|------|-------|-----------------|------|
-| GET | `/products/{product_id}/reviews` | Danh sách review của 1 sản phẩm | 🔓 Public | - |
-| POST | `/products/{product_id}/reviews` | Viết review (chỉ khi đã mua sản phẩm) | 🔒 Auth | Customer |
-| DELETE | `/reviews/{review_id}` | Xóa review vi phạm | 🔒 Auth | Admin |
+| GET | `/products/{product_id}/reviews` | Danh sách review của 1 sản phẩm, kèm `average_rating`/tổng số review | 🔓 Public | - |
+| POST | `/products/{product_id}/reviews` | Viết review (chỉ khi đã mua sản phẩm, `order_id` client tự chọn nếu có nhiều đơn khớp) | 🔒 Auth | Customer |
+| GET | `/reviews` | Danh sách TOÀN BỘ review phục vụ trang moderation (lọc `product_id`/`is_deleted`, task "Hoàn thiện review sản phẩm" - mới thêm) | 🔒 Auth | Admin |
+| DELETE | `/reviews/{review_id}` | Xóa mềm review vi phạm (`is_deleted=true`, giữ audit trail) | 🔒 Auth | Admin |
 
 ---
 

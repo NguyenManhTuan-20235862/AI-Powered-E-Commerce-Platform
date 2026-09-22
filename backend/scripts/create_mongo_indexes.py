@@ -23,15 +23,21 @@ nuốt lỗi rồi báo "thành công" sai sự thật.
 
 Cách chạy (giống `scripts/seed_admin.py`) - trong container backend dev:
     docker compose exec backend python -m scripts.create_mongo_indexes
+
+`db`: optional, mặc định `get_mongo_db()` (database dev thật) - tham số này
+thêm ở task "Hoàn thiện review sản phẩm" để `tests/conftest.py` gọi LẠI ĐÚNG
+hàm này cho database test riêng (`<MONGO_DB_NAME>_test`), tránh định nghĩa
+trùng lặp 2 nơi cho cùng 1 bộ index.
 """
 
 from pymongo import ASCENDING
+from pymongo.database import Database as MongoDatabase
 
 from app.core.database import get_mongo_db
 
 
-def create_mongo_indexes() -> None:
-    db = get_mongo_db()
+def create_mongo_indexes(db: MongoDatabase | None = None) -> None:
+    db = db if db is not None else get_mongo_db()
 
     # Hướng ASCENDING/DESCENDING không ảnh hưởng hiệu năng cho field SORT
     # DUY NHẤT ở cuối 1 compound index (MongoDB quét index theo cả 2 chiều

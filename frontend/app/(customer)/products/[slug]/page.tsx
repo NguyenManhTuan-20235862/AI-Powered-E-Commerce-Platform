@@ -5,6 +5,7 @@ import { Breadcrumb } from "@/components/product/Breadcrumb";
 import { ProductGallery } from "@/components/product/ProductGallery";
 import { ProductGrid } from "@/components/product/ProductGrid";
 import { ProductInfo } from "@/components/product/ProductInfo";
+import { ProductReviews } from "@/components/product/ProductReviews";
 import { ApiError, fetchApi } from "@/lib/api-server";
 import type { Product } from "@/types/product";
 
@@ -75,20 +76,7 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
         </section>
       )}
 
-      <section className="mx-auto mb-16 max-w-3xl rounded-3xl bg-surface/30 py-16 text-center shadow-soft">
-        <h2 className="mb-6 font-heading text-2xl text-foreground">Đánh giá sản phẩm</h2>
-        <div className="flex flex-col items-center gap-4 px-6 text-foreground-secondary">
-          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-surface text-foreground-muted">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M4 4h16v12H8l-4 4V4Z" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-          <p className="text-lg">Chưa có đánh giá nào.</p>
-          <p className="max-w-sm text-sm opacity-80">
-            Hãy là người đầu tiên chia sẻ cảm nhận về sản phẩm này với cộng đồng Vun.
-          </p>
-        </div>
-      </section>
+      <ProductReviews productId={product.id} />
     </div>
   );
 }

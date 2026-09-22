@@ -27,9 +27,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import app.models  # noqa: F401 - đăng ký model vào Base.metadata trước khi create_all
 from app.core.config import get_settings
-from app.core.database import Base, get_db
+from app.core.database import Base, get_db, get_mongo_db
+from app.core.database import mongo_client as shared_mongo_client
 from app.core.database import redis_client as shared_redis_client
 from app.main import app
+from scripts.create_mongo_indexes import create_mongo_indexes
 
 
 def _build_test_database_url() -> str:
@@ -60,7 +62,7 @@ def _test_engine() -> Engine:
 
 
 @pytest.fixture
-def client(_test_engine: Engine) -> TestClient:
+def client(_test_engine: Engine, mongo_db) -> TestClient:
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_test_engine)
 
     def override_get_db():
@@ -71,6 +73,10 @@ def client(_test_engine: Engine) -> TestClient:
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
+    # get_mongo_db() thật trỏ settings.MONGO_DB_NAME (dev) - override sang
+    # database test riêng (xem fixture mongo_db phía trên) để mọi router
+    # dùng Mongo (review.py) test qua `client` không đụng dữ liệu dev thật.
+    app.dependency_overrides[get_mongo_db] = lambda: mongo_db
     try:
         # raise_server_exceptions=False: mặc định TestClient tự raise lại exception
         # ra ngoài test kể cả khi app đã có catch-all Exception handler xử lý đúng
@@ -96,6 +102,32 @@ def redis_client() -> redis.Redis:
         keys = shared_redis_client.keys("test:*")
         if keys:
             shared_redis_client.delete(*keys)
+
+
+@pytest.fixture
+def mongo_db():
+    """MongoDB THẬT (container compose service `mongodb`, cùng triết lý
+    MySQL/Redis ở trên - không mock) - DATABASE RIÊNG cho test
+    (`<MONGO_DB_NAME>_test`, cùng quy ước hậu tố `_test` đã dùng cho MySQL ở
+    `_build_test_database_url()`), KHÔNG đụng vào dữ liệu dev thật trong
+    `settings.MONGO_DB_NAME`. Tự tạo lại đúng 2 index đã có sẵn ở DB dev
+    (`create_mongo_indexes()`, `backend/scripts/create_mongo_indexes.py` -
+    script CHẠY TAY task 3.2.3, ĐÃ chạy thật trên DB dev từ trước, tự phát
+    hiện lúc verify task "Hoàn thiện review sản phẩm") - DB test riêng này
+    không tự có index nào (MongoDB không "migrate" như Alembic, index chỉ có
+    khi chủ động chạy script, KHÔNG chạy ngầm lúc app khởi động - xem
+    docstring script). Dọn SẠCH collection `reviews` trước mỗi test (không phải
+    sau - lỡ 1 test trước đó fail giữa chừng để lại rác vẫn không ảnh hưởng
+    test tiếp theo) để mỗi test có state sạch, không cần drop cả database.
+    """
+    settings = get_settings()
+    db = shared_mongo_client[f"{settings.MONGO_DB_NAME}_test"]
+    db.reviews.delete_many({})
+    create_mongo_indexes(db)
+    try:
+        yield db
+    finally:
+        db.reviews.delete_many({})
 
 
 @pytest.fixture

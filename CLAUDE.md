@@ -486,6 +486,61 @@ nhập nhưng chưa có dữ liệu).
 trực tiếp, không phụ thuộc `CartProvider`/`AdminAuthGuard`. Link vào trang
 này đặt ở dropdown user (`Header.tsx`, Customer) VÀ `Sidebar.tsx` (Admin).
 
+**Review sản phẩm** (`GET`/`POST /products/{id}/reviews`, `GET`/`DELETE
+/reviews`, task "Hoàn thiện review sản phẩm") — implement thật thay 3
+endpoint `501` cũ (task 3.2.1-3.2.3 chỉ thiết kế schema + tạo index qua
+`backend/scripts/create_mongo_indexes.py`, KHÔNG có logic router). Đây là
+lần ĐẦU TIÊN trong dự án 1 request kết hợp CẢ MySQL (verify mua hàng) LẪN
+MongoDB (đọc/ghi review) trong cùng 1 luồng.
+
+`POST /products/{id}/reviews` nhận `order_id` do CLIENT CHỈ ĐỊNH (KHÔNG phải
+Backend tự chọn - quyết định đã xác nhận: user có thể mua sản phẩm này ở
+NHIỀU đơn `delivered` khác nhau, tự chọn gắn review vào đơn nào, Frontend tự
+lọc qua `GET /orders?status=delivered` client-side, KHÔNG cần thêm API mới).
+`review_service.verify_purchase()` verify LẠI 3 điều kiện, mỗi điều kiện 1
+message lỗi RIÊNG (không gộp chung mơ hồ như `_unauthorized()` - đây không
+phải bối cảnh bảo mật, user có quyền biết chính xác lý do): `order_id` đúng
+là của `current_user`, đơn đã `delivered`, đơn chứa ĐÚNG sản phẩm đang review.
+
+**Unique index `(user_id, order_id, product_id)` + compound `(product_id,
+is_deleted, created_at)` ĐÃ CÓ SẴN THẬT** trên MongoDB dev (task 3.2.3 chạy
+tay `backend/scripts/create_mongo_indexes.py` từ trước - phát hiện lúc verify
+task này, KHÔNG cần tạo lại, main.py KHÔNG tự tạo index lúc khởi động, đúng
+quyết định đã ghi trong docstring script đó). `tests/conftest.py` có fixture
+`mongo_db` riêng (database `<MONGO_DB_NAME>_test`) gọi LẠI đúng hàm
+`create_mongo_indexes()` trong script cho DB test, tránh định nghĩa index
+trùng lặp 2 nơi.
+
+`response_model_by_alias=False` bắt buộc ở CẢ 3 route trả `Review*Read`
+(`app/routers/review.py`) — `id: PyObjectId = Field(alias="_id")` mặc định bị
+FastAPI serialize theo alias (`response_model_by_alias=True` mặc định), lộ
+`_id` (quy ước nội bộ MongoDB) ra JSON thay vì `id` như mọi resource khác
+trong API - tự bắt lỗi này lúc viết test (`KeyError: 'id'`), không phải suy
+đoán trước.
+
+`GET /reviews` (Admin, phân trang + lọc `product_id`/`is_deleted`) và trang
+`/admin/reviews` (`ReviewTable.tsx`) là MỞ RỘNG thêm (quyết định đã xác
+nhận) - KHÔNG có trong `docs/API_SPEC.md` bản gốc task 3.2.2/6.x (bản gốc
+chỉ có `DELETE /reviews/{id}`). KHÁC `list_product_reviews()` (luôn ẩn
+`is_deleted=true`): Admin thấy CẢ review đã xóa mềm (đúng mục đích "audit
+trail" của thiết kế soft-delete) - `is_deleted` chỉ lọc khi Admin chọn rõ.
+`ReviewAdminRead` có thêm `product_name` (JOIN sang MySQL theo BATCH, không
+N+1) vì document Mongo chỉ denormalize `user_name`, không có tên sản phẩm.
+
+XÓA review (Admin) và GỬI review (Customer) đều KHÔNG gọi lại API list toàn
+bộ sau khi xong - `ReviewTable.tsx`/`page.tsx`
+patch 1 dòng cục bộ (`is_deleted: true`, biết chắc kết quả vì soft-delete
+luôn xác định); `ProductReviews.tsx` gọi lại CHÍNH XÁC `fetchReviews()` (chỉ
+trang review, KHÔNG phải cả trang sản phẩm) sau khi gửi thành công, và loại
+`order_id` vừa dùng khỏi danh sách đơn hợp lệ (tránh bấm gửi lại ngay, nhận
+409 oan) - danh sách đơn hợp lệ KHÔNG tự biết review nào đã tồn tại (Frontend
+không pre-check trùng), lỗi 409 thật từ Backend vẫn là tuyến phòng thủ cuối
+cùng nếu user reload trang rồi thử lại đúng đơn đã dùng.
+
+`StarRating.tsx` (`components/product/`) - component rating ĐẦU TIÊN trong
+dự án, dùng chung CẢ chế độ xem (điểm trung bình, từng review) LẪN chế độ
+nhập (form viết review) qua prop `onChange` có/không.
+
 **Luồng dữ liệu chính**:
 - **MySQL** (qua SQLAlchemy): dữ liệu quan hệ — User, Product, Category, Cart, Order.
 - **MongoDB** (qua PyMongo): dữ liệu phi cấu trúc — Chat log (AI Agent), Review.

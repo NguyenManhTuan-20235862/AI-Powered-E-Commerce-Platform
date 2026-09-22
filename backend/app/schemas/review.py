@@ -131,6 +131,47 @@ class ReviewInDB(ReviewBase):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class ReviewCreateRequest(BaseModel):
+    """Request body THẬT của `POST /products/{product_id}/reviews` (task
+    "Hoàn thiện review sản phẩm") - KHÁC hẳn `ReviewCreate` phía trên (đó là
+    document ĐÃ ASSEMBLE đầy đủ sẵn sàng insert, không phải body client gửi).
+
+    `order_id` do CLIENT chỉ định (KHÔNG phải Backend tự chọn) - quyết định
+    đã xác nhận: user có thể có NHIỀU đơn `delivered` khác nhau đều chứa
+    đúng sản phẩm này, để user tự chọn gắn review vào đơn nào (Frontend fetch
+    `GET /orders?status=delivered`, lọc đơn chứa sản phẩm, cho chọn nếu >1
+    đơn khớp). Router/service verify LẠI `order_id` này thuộc đúng Customer +
+    chứa đúng sản phẩm + đã `delivered` trước khi tin - KHÔNG tin nguyên giá
+    trị client gửi lên."""
+
+    order_id: int
+    rating: int = Field(ge=1, le=5)
+    comment: str | None = None
+    images: list[str] | None = None
+
+
+class ReviewAdminRead(ReviewBase):
+    """Response `GET /reviews` (Admin, task "Hoàn thiện review sản phẩm" -
+    thêm mới, KHÔNG có trong `docs/API_SPEC.md` bản gốc task 3.2.2/6.x, xem
+    quyết định đã xác nhận khi mở rộng trang moderation Admin).
+
+    KHÁC `ReviewRead` (public) ở 2 điểm: (1) CÓ `is_deleted` - Admin cần thấy
+    cả review đã xóa mềm (đúng tinh thần "audit trail" đã thiết kế cho
+    soft-delete, xem docstring module) để biết review nào đã bị ai đó xóa;
+    (2) có thêm `product_name` - JOIN thời điểm đọc sang MySQL (denormalize
+    CHỈ có `user_name` trong document, KHÔNG có tên sản phẩm - Admin xem
+    bảng cần tên sản phẩm hiện tại để dễ đối chiếu, không cần chính xác
+    tuyệt đối theo lịch sử như snapshot `order_items.product_name`)."""
+
+    id: PyObjectId = Field(alias="_id")
+    is_deleted: bool
+    product_name: str | None = None
+    created_at: datetime
+    updated_at: datetime | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class ReviewRead(ReviewBase):
     """Response schema CÔNG KHAI cho `GET /products/{id}/reviews` (Public) và
     `POST /products/{id}/reviews` (Customer) - xem `app/routers/review.py`.
@@ -151,3 +192,21 @@ class ReviewRead(ReviewBase):
     updated_at: datetime | None = None
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+class ReviewListRead(BaseModel):
+    """Response `GET /products/{product_id}/reviews` (Public) - phân trang
+    THỦ CÔNG riêng cho Review (KHÔNG dùng lại `PaginatedResponse` chung ở
+    `app/schemas/common.py`) vì cần thêm `average_rating` (điểm trung bình,
+    tính trên TOÀN BỘ review chưa xóa của sản phẩm, KHÔNG PHẢI chỉ trang hiện
+    tại) - field này chỉ Review mới cần, thêm vào `PaginatedResponse` generic
+    sẽ ảnh hưởng mọi endpoint phân trang khác trong dự án."""
+
+    items: list[ReviewRead] = []
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+    total_pages: int = 0
+    # None nếu sản phẩm chưa có review nào (KHÔNG trả 0 - 0 dễ hiểu nhầm
+    # thành "điểm trung bình là 0 sao", khác hẳn "chưa có ai đánh giá").
+    average_rating: float | None = None
