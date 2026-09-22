@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { UserDetailModal } from "@/components/admin/UserDetailModal";
 import { UserTable } from "@/components/admin/UserTable";
 import { api } from "@/lib/axios";
 import type { ApiResponse, PaginatedResponse } from "@/types/common";
@@ -32,6 +33,7 @@ export default function AdminUsersPage() {
   const [search, setSearch] = useState("");
   const [role, setRole] = useState<UserRole | "">("");
   const [isActive, setIsActive] = useState<"" | "true" | "false">("");
+  const [detailUserId, setDetailUserId] = useState<number | null>(null);
 
   const fetchUsers = useCallback(async () => {
     setIsLoading(true);
@@ -76,6 +78,13 @@ export default function AdminUsersPage() {
     setPage(1);
   }
 
+  // Patch ĐÚNG 1 dòng trong state cục bộ từ response PUT /users/{id}/status
+  // - KHÔNG gọi lại fetchUsers() (toàn bảng). Xem đánh đổi đã chấp nhận (dòng
+  // không còn khớp filter isActive vẫn hiện tạm) ở docstring UserTable.tsx.
+  function handleUserChanged(updated: AdminUser) {
+    setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -97,8 +106,13 @@ export default function AdminUsersPage() {
         total={total}
         pageSize={pageSize}
         onPageChange={setPage}
-        onChanged={fetchUsers}
+        onChanged={handleUserChanged}
+        onViewDetail={setDetailUserId}
       />
+
+      {detailUserId !== null && (
+        <UserDetailModal userId={detailUserId} onClose={() => setDetailUserId(null)} />
+      )}
     </div>
   );
 }

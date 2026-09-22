@@ -156,6 +156,34 @@ theo Admin chống retry trùng. Hủy/đổi trạng thái khóa lại Order tr
 rồi khóa sản phẩm theo ID tăng dần. Lịch sử chỉ điều chỉnh Admin, không checkout.
 Seed demo đơn hàng cũng khóa/refresh sản phẩm trước khi tính tồn còn lại.
 
+**Quản lý người dùng Admin** (`/admin/users`, hoàn thiện thêm ở task "Hoàn
+thiện quản lý tài khoản Admin") — `UserTable.tsx` ẩn nút "Khóa"/"Mở khóa" ở
+hàng `role === "admin"` (chỉ hiện "—"), khớp ĐÚNG giới hạn Backend thật:
+`PUT /users/{id}/status` trả 403 nếu target là BẤT KỲ Admin nào (kể cả tự
+khóa chính mình, xem `app/routers/user.py`) — UI ẩn trước để tránh 1 request
+403 vô ích, không phải giới hạn UI đơn thuần như quyết định ban đầu.
+
+`UserDetailModal.tsx` (modal, KHÔNG phải route `/admin/users/[id]` riêng —
+Admin panel chưa có tiền lệ route chi tiết nào, Product/Category đều sửa qua
+modal) — nút "Chi tiết" hiện cho MỌI role (kể cả Admin, chỉ hành động KHÓA
+mới bị chặn), fetch LẠI `GET /users/{id}` khi mở (cho endpoint này — trước
+đó Frontend hoàn toàn không gọi dù đã có sẵn ở Backend/`docs/API_SPEC.md` —
+một mục đích sử dụng thật, không tin dữ liệu dòng bảng có thể đã cũ) + hiện
+lịch sử đơn hàng qua `GET /orders/admin?user_id=<id>` (tham số `user_id` mới
+thêm ở router — `order_service.list_orders()` vốn đã hỗ trợ sẵn tham số này
+từ trước, chỉ Customer dùng qua `GET /orders`, router Admin trước đó hardcode
+`user_id=None`).
+
+Khóa/mở khóa xong (`UserTable.tsx:handleToggleActive`) KHÔNG gọi lại
+`fetchUsers()` toàn bảng — `onChanged` nhận thẳng `AdminUser` mới nhất từ
+response `PUT` (đã có sẵn, trước đây bỏ qua chỉ đọc `message`), `page.tsx`
+patch ĐÚNG 1 dòng qua `setUsers(prev => prev.map(...))`. Đánh đổi đã chấp
+nhận: nếu đang lọc theo `isActive` và dòng vừa đổi không còn khớp bộ lọc,
+dòng đó vẫn hiện tạm (không tự biến mất) tới lần fetch tự nhiên kế tiếp (đổi
+trang/filter/tìm kiếm) — đơn giản hơn hẳn so với tự đồng bộ lại
+`total`/`totalPages` cho 1 tình huống không thường xuyên, cùng tinh thần "nếu
+hợp lý" đã yêu cầu.
+
 Cấu trúc thư mục `backend/app/` và `frontend/app/` — xem trực tiếp cấu trúc
 thư mục, chuẩn layer (core/routers/models/schemas/services) và route-group
 (App Router) thông thường, khớp `docs/API_SPEC.md`. Các điểm KHÔNG tự đọc

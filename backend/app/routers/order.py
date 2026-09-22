@@ -116,14 +116,20 @@ def list_all_orders(
     # không có mã dạng chữ, xem docstring `order_service.list_orders()`) hoặc
     # theo tên khách hàng (`shipping_name`) - dùng chung 1 ô search ở UI.
     search: str | None = None,
+    # task "Hoàn thiện quản lý tài khoản Admin" - lọc theo ĐÚNG 1 user (dùng
+    # cho tab "Lịch sử đơn" ở trang chi tiết user Admin) - service layer
+    # (order_service.list_orders()) đã có sẵn tham số này từ trước (dùng cho
+    # GET /orders của Customer, luôn truyền user_id=current_user.id), router
+    # Admin trước đây CHỈ hardcode None - giờ nhận thêm qua query param.
+    user_id: int | None = None,
 ) -> APIResponse[PaginatedResponse[OrderRead]]:
-    """Danh sách toàn bộ đơn hàng (filter theo trạng thái, ngày, tìm theo mã
-    đơn/tên khách hàng qua `?search=`). Yêu cầu: Admin."""
+    """Danh sách toàn bộ đơn hàng (filter theo trạng thái, ngày, user cụ thể,
+    tìm theo mã đơn/tên khách hàng qua `?search=`). Yêu cầu: Admin."""
     items, total = order_service.list_orders(
         db,
         page=pagination.page,
         page_size=pagination.page_size,
-        user_id=None,
+        user_id=user_id,
         status_filter=status_filter,
         date_from=date_from,
         date_to=date_to,
