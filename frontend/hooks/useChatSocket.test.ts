@@ -55,6 +55,11 @@ class FakeWebSocket {
     this.readyState = FakeWebSocket.CLOSED;
     this.onclose?.();
   }
+
+  /** Test helper (task 6.1.2) - giả lập server gửi 1 event JSON bất kỳ. */
+  simulateMessage(data: unknown) {
+    this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(data) }));
+  }
 }
 
 function latestSocket(): FakeWebSocket {
@@ -230,5 +235,93 @@ describe("useChatSocket - vòng đời reconnect (task 5.1.2)", () => {
       vi.advanceTimersByTime(60000);
     });
     expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+});
+
+describe("useChatSocket - streaming chunk/done/error (task 6.1.2)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    FakeWebSocket.instances = [];
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("gửi tin nhắn -> isStreaming=true NGAY LẬP TỨC (khóa input trước khi có phản hồi)", () => {
+    const { result } = renderHook(() => useChatSocket({ enabled: true }));
+    act(() => latestSocket().simulateConnected());
+    expect(result.current.isStreaming).toBe(false);
+
+    act(() => result.current.sendMessage("Xin chào"));
+
+    expect(result.current.isStreaming).toBe(true);
+  });
+
+  it("chunk ĐẦU TIÊN tạo 1 tin nhắn assistant mới, các chunk SAU nối vào ĐÚNG tin đó (không tạo tin mới)", () => {
+    const { result } = renderHook(() => useChatSocket({ enabled: true }));
+    act(() => latestSocket().simulateConnected());
+    act(() => result.current.sendMessage("Xin chào"));
+
+    act(() => latestSocket().simulateMessage({ type: "chunk", content: "Xin" }));
+    expect(result.current.messages).toHaveLength(2); // user + assistant (chunk 1)
+    expect(result.current.messages[1]).toMatchObject({ role: "assistant", message: "Xin" });
+
+    act(() => latestSocket().simulateMessage({ type: "chunk", content: " chào" }));
+    act(() => latestSocket().simulateMessage({ type: "chunk", content: "!" }));
+
+    // VẪN đúng 2 tin nhắn (không tạo thêm bubble mới cho mỗi chunk) - nội
+    // dung đã nối dần thành câu hoàn chỉnh.
+    expect(result.current.messages).toHaveLength(2);
+    expect(result.current.messages[1]).toMatchObject({ role: "assistant", message: "Xin chào!" });
+    // Cùng 1 id xuyên suốt (đúng 1 bubble được CẬP NHẬT, không phải bị thay bằng bubble khác).
+    const assistantId = result.current.messages[1].id;
+    act(() => latestSocket().simulateMessage({ type: "chunk", content: " Hi" }));
+    expect(result.current.messages[1].id).toBe(assistantId);
+  });
+
+  it("nhận 'done' -> isStreaming=false (mở khóa lại input)", () => {
+    const { result } = renderHook(() => useChatSocket({ enabled: true }));
+    act(() => latestSocket().simulateConnected());
+    act(() => result.current.sendMessage("Xin chào"));
+    act(() => latestSocket().simulateMessage({ type: "chunk", content: "Xin chào" }));
+    expect(result.current.isStreaming).toBe(true);
+
+    act(() => latestSocket().simulateMessage({ type: "done" }));
+
+    expect(result.current.isStreaming).toBe(false);
+  });
+
+  it("nhận 'error' TRƯỚC khi có chunk nào (VD timeout token đầu) -> isStreaming=false, KHÔNG tạo tin nhắn assistant nào", () => {
+    const { result } = renderHook(() => useChatSocket({ enabled: true }));
+    act(() => latestSocket().simulateConnected());
+    act(() => result.current.sendMessage("Xin chào"));
+    expect(result.current.isStreaming).toBe(true);
+
+    act(() => latestSocket().simulateMessage({ type: "error", message: "Trợ lý đang bận, vui lòng thử lại sau" }));
+
+    expect(result.current.isStreaming).toBe(false);
+    // Chỉ có đúng tin "user" vừa gửi - KHÔNG có bubble assistant rỗng/lỗi nào bị tạo ra.
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0].role).toBe("user");
+  });
+
+  it("tin nhắn thứ 2 (sau khi lượt 1 đã 'done') tạo bubble assistant MỚI, không nối vào bubble cũ", () => {
+    const { result } = renderHook(() => useChatSocket({ enabled: true }));
+    act(() => latestSocket().simulateConnected());
+
+    act(() => result.current.sendMessage("Câu hỏi 1"));
+    act(() => latestSocket().simulateMessage({ type: "chunk", content: "Trả lời 1" }));
+    act(() => latestSocket().simulateMessage({ type: "done" }));
+
+    act(() => result.current.sendMessage("Câu hỏi 2"));
+    act(() => latestSocket().simulateMessage({ type: "chunk", content: "Trả lời 2" }));
+
+    expect(result.current.messages).toHaveLength(4); // user1, assistant1, user2, assistant2
+    expect(result.current.messages[1]).toMatchObject({ role: "assistant", message: "Trả lời 1" });
+    expect(result.current.messages[3]).toMatchObject({ role: "assistant", message: "Trả lời 2" });
+    expect(result.current.messages[1].id).not.toBe(result.current.messages[3].id);
   });
 });

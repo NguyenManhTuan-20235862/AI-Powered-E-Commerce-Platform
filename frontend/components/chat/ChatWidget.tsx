@@ -28,7 +28,7 @@ export function ChatWidget() {
     toast.error(message);
   }, []);
 
-  const { status, messages, sendMessage, retryNow } = useChatSocket({
+  const { status, messages, isStreaming, sendMessage, retryNow } = useChatSocket({
     enabled: isOpen,
     onServerError: handleServerError,
   });
@@ -59,6 +59,7 @@ export function ChatWidget() {
     <ChatPanel
       messages={messages}
       status={status}
+      isStreaming={isStreaming}
       onSend={sendMessage}
       onRetry={retryNow}
       onClose={() => setIsOpen(false)}

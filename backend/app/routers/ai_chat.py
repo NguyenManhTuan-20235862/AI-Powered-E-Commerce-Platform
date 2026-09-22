@@ -22,15 +22,16 @@ sync, qua is_token_blacklisted bên trong get_current_user) đều PHẢI bọc
 event loop, ảnh hưởng MỌI WebSocket connection khác đang chạy chung process
 (xem app/core/database.py, đã note sẵn cho cả 2 client).
 
-AI Agent thật CHƯA tồn tại (task 6.x, LangChain vẫn ở requirements-ai.txt
-chưa cài - KNOWN_TODOS #4) - task 5.1.1 CHỈ xây hạ tầng truyền tin + xác thực
-+ lưu trữ: nhận tin nhắn user -> lưu `chat_logs` -> trả phản hồi placeholder
-(role="system") -> cũng lưu vào `chat_logs` (mọi tin nhắn, kể cả placeholder,
-đều là 1 document - xem app/schemas/chat_log.py). Rate limit (task 8.3) CHƯA
-làm - biết trước rủi ro (ai cũng gọi được, tốn tài nguyên vô tội vạ khi có AI
-Agent thật) nhưng để dành task riêng, đúng KNOWN_TODOS #2 (mục này đóng lại
-ở task 5.1.1, phần rate limit tách thành #2 mới nếu cần theo dõi tiếp - xem
-docs/KNOWN_TODOS.md).
+AI Agent thật (task 6.1.2, `app/services/chat_service.py:stream_agent_reply()`)
+- nhận tin nhắn user -> lưu `chat_logs` -> stream phản hồi LLM theo từng
+chunk qua WebSocket (giao thức `chunk`/`done`/`error`, KHÔNG PHẢI `reply` 1
+lần như bản placeholder cũ) -> lưu full message assistant vào `chat_logs`
+khi stream xong. CHƯA có RAG/tool query DB thật (task 6.2/6.3) - system
+prompt (chat_service.py) tự giới hạn phạm vi trả lời, không bịa giá/tồn kho
+sản phẩm cụ thể. Rate limit (task 8.3) CHƯA làm - biết trước rủi ro (ai cũng
+gọi được, tốn tài nguyên vô tội vạ với AI Agent thật đã tốn chi phí/tài
+nguyên tính toán hơn hẳn placeholder cũ) nhưng để dành task riêng, đúng
+KNOWN_TODOS #2 (xem docs/KNOWN_TODOS.md).
 """
 
 import asyncio
@@ -53,6 +54,7 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db, get_mongo_db, get_redis
+from app.core.llm import LLMUnavailableError
 from app.core.openapi_responses import auth_responses, rate_limit_response
 from app.core.security import get_current_user, get_token_payload, require_role
 from app.models.user import User, UserRole
@@ -118,14 +120,21 @@ async def chat_websocket(
     current_user: Annotated[User, Depends(authenticate_websocket)],
     mongo_db: Annotated[MongoDatabase, Depends(get_mongo_db)],
 ) -> None:
-    """Kênh WebSocket chat realtime giữa Customer và AI Agent (task 5.1.1).
+    """Kênh WebSocket chat realtime giữa Customer và AI Agent (task 5.1.1,
+    agent thật task 6.1.2).
 
     Vòng đời: accept -> gửi `{"type": "connected", "session_id": ...}` -> lặp
-    nhận/lưu/phản hồi tới khi client ngắt kết nối hoặc lỗi. Tin nhắn sai định
-    dạng (không phải JSON, hoặc JSON nhưng sai schema `ChatMessageCreate`)
-    KHÔNG làm crash connection - chỉ gửi `{"type": "error", ...}` lại đúng
-    client đó rồi tiếp tục vòng lặp. Lỗi hạ tầng (Mongo insert thất bại) cũng
-    được bắt riêng, không để crash connection.
+    nhận/lưu/stream phản hồi tới khi client ngắt kết nối hoặc lỗi. Tin nhắn
+    sai định dạng (không phải JSON, hoặc JSON nhưng sai schema
+    `ChatMessageCreate`) KHÔNG làm crash connection - chỉ gửi
+    `{"type": "error", ...}` lại đúng client đó rồi tiếp tục vòng lặp. Lỗi hạ
+    tầng (Mongo insert thất bại) cũng được bắt riêng, không để crash
+    connection.
+
+    Giao thức phản hồi (task 6.1.2, thay hẳn `reply` 1 lần của bản placeholder
+    cũ): 0..N `{"type": "chunk", "content": "..."}` (mỗi mảnh text AI sinh ra)
+    rồi `{"type": "done"}` (báo stream xong) - HOẶC `{"type": "error", ...}`
+    nếu LLM lỗi/treo giữa chừng (KHÔNG gửi `done` trong trường hợp này).
     """
     await websocket.accept()
     session_id = chat_service.new_session_id()
@@ -155,27 +164,44 @@ async def chat_websocket(
                     message=payload.message,
                 )
                 await asyncio.to_thread(chat_service.save_chat_log, mongo_db, user_log)
-
-                reply_log = ChatLogCreate(
-                    user_id=current_user.id,
-                    session_id=session_id,
-                    role="system",
-                    message=chat_service.PLACEHOLDER_REPLY_MESSAGE,
-                )
-                await asyncio.to_thread(chat_service.save_chat_log, mongo_db, reply_log)
             except Exception:
-                logger.exception("Lỗi lúc lưu chat_logs (user_id=%s, session_id=%s)", current_user.id, session_id)
+                logger.exception("Lỗi lúc lưu tin nhắn user (user_id=%s, session_id=%s)", current_user.id, session_id)
                 await websocket.send_json({"type": "error", "message": "Lỗi hệ thống - vui lòng thử lại"})
                 continue
 
-            await websocket.send_json(
-                {
-                    "type": "reply",
-                    "role": "system",
-                    "message": chat_service.PLACEHOLDER_REPLY_MESSAGE,
-                    "session_id": session_id,
-                }
-            )
+            reply_parts: list[str] = []
+            try:
+                async for chunk_text in chat_service.stream_agent_reply(mongo_db, session_id, payload.message):
+                    reply_parts.append(chunk_text)
+                    await websocket.send_json({"type": "chunk", "content": chunk_text})
+            except LLMUnavailableError:
+                logger.warning(
+                    "LLM không khả dụng lúc trả lời (user_id=%s, session_id=%s)", current_user.id, session_id
+                )
+                await websocket.send_json({"type": "error", "message": "Trợ lý đang bận, vui lòng thử lại sau"})
+                continue
+
+            full_reply = "".join(reply_parts).strip()
+            if full_reply:
+                try:
+                    assistant_log = ChatLogCreate(
+                        user_id=current_user.id,
+                        session_id=session_id,
+                        role="assistant",
+                        message=full_reply,
+                    )
+                    await asyncio.to_thread(chat_service.save_chat_log, mongo_db, assistant_log)
+                except Exception:
+                    # Tin nhắn ĐÃ stream hết cho client rồi (chunk gửi xong) -
+                    # chỉ log lỗi lưu trữ, KHÔNG báo lỗi cho user (họ đã nhận
+                    # được câu trả lời, chỉ lịch sử phiên có thể thiếu tin
+                    # nhắn này) - khác nhánh lỗi user_log ở trên (lúc đó CHƯA
+                    # gửi gì cho user, phải báo lỗi thật).
+                    logger.exception(
+                        "Lỗi lúc lưu tin nhắn assistant (user_id=%s, session_id=%s)", current_user.id, session_id
+                    )
+
+            await websocket.send_json({"type": "done"})
     except WebSocketDisconnect:
         pass
 

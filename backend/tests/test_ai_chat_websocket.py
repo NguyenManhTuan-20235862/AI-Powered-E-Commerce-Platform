@@ -1,10 +1,17 @@
-"""Test xác thực WebSocket /ws/chat (task 5.1.1).
+"""Test WebSocket /ws/chat - xác thực (task 5.1.1) + luồng chat thật (task 6.1.2).
 
-Chỉ test PHẦN XÁC THỰC (accept/reject đúng lúc handshake) - cùng phạm vi
+Phần XÁC THỰC (accept/reject đúng lúc handshake) - cùng phạm vi
 `test_security.py`/`test_jwt_blacklist.py` (register+login thật qua HTTP,
-MySQL/Redis thật, không mock). Vòng đời gửi/nhận/lưu tin nhắn thật (cần
-MongoDB) verify riêng bằng WS client thật ngoài pytest, xem hướng dẫn verify
-trong PR - không thuộc phạm vi test tự động này.
+MySQL/Redis thật, không mock).
+
+Phần LUỒNG CHAT (task 6.1.2) - mock `chat_service.save_chat_log`/
+`chat_service.stream_agent_reply` (KHÔNG cần MongoDB/LLM thật) để test
+ĐÚNG HÀNH VI CỦA ROUTER (hình dạng giao thức `chunk`/`done`/`error`, lỗi LLM
+không làm crash/đóng connection) tách biệt khỏi việc LLM có trả lời "đúng"
+hay không - phần đó (nội dung AI trả lời thật, lưu MongoDB thật, nhớ ngữ
+cảnh nhiều lượt thật) verify bằng browser/WS client thật ngoài pytest, xem
+hướng dẫn verify trong PR (cần Ollama chạy thật, không phù hợp làm test tự
+động xác định trước kết quả).
 
 `TestClient.websocket_connect()` (Starlette) mở kết nối thật qua ASGI - nếu
 server đóng kết nối TRƯỚC KHI accept (dependency raise `WebSocketException`,
@@ -22,6 +29,7 @@ from sqlalchemy.orm import Session
 from starlette.testclient import WebSocketDisconnect
 
 from app.core.config import get_settings
+from app.core.llm import LLMUnavailableError
 from app.core.security import create_access_token, hash_password
 from app.models.user import User, UserRole
 
@@ -132,3 +140,60 @@ def test_valid_customer_token_connects_successfully(client: TestClient) -> None:
         first_message = ws.receive_json()
         assert first_message["type"] == "connected"
         assert isinstance(first_message["session_id"], str) and first_message["session_id"]
+
+
+CHAT_FLOW_PAYLOAD = {
+    "email": "ws-chat-flow-test@example.com",
+    "password": "password123",
+    "full_name": "WS Chat Flow Test User",
+}
+
+
+def test_streaming_reply_sends_chunks_then_done(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Task 6.1.2 - mock `chat_service.save_chat_log`/`stream_agent_reply` để
+    xác nhận ĐÚNG hình dạng giao thức: N `{"type": "chunk", ...}` liên tiếp
+    rồi ĐÚNG 1 `{"type": "done"}`, không xen lẫn/thiếu."""
+    monkeypatch.setattr("app.services.chat_service.save_chat_log", lambda mongo_db, log: None)
+
+    async def fake_stream_agent_reply(mongo_db, session_id, user_message):
+        for part in ["Xin", " chào", "!"]:
+            yield part
+
+    monkeypatch.setattr("app.services.chat_service.stream_agent_reply", fake_stream_agent_reply)
+
+    tokens = _register_and_login(client, CHAT_FLOW_PAYLOAD)
+    with client.websocket_connect(f"/api/v1/ws/chat?token={tokens['access_token']}") as ws:
+        ws.receive_json()  # "connected"
+
+        ws.send_json({"message": "Xin chào"})
+
+        assert ws.receive_json() == {"type": "chunk", "content": "Xin"}
+        assert ws.receive_json() == {"type": "chunk", "content": " chào"}
+        assert ws.receive_json() == {"type": "chunk", "content": "!"}
+        assert ws.receive_json() == {"type": "done"}
+
+
+def test_llm_unavailable_sends_error_and_keeps_connection_usable(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Task 6.1.2, quyết định 3 - `LLMUnavailableError` (Ollama không chạy/
+    timeout token đầu) PHẢI báo lỗi rõ ràng qua WebSocket, KHÔNG đóng
+    connection - gửi tiếp tin nhắn khác vẫn hoạt động bình thường."""
+    monkeypatch.setattr("app.services.chat_service.save_chat_log", lambda mongo_db, log: None)
+
+    async def failing_stream_agent_reply(mongo_db, session_id, user_message):
+        raise LLMUnavailableError("giả lập LLM không kết nối được")
+        yield  # noqa: unreachable - bắt buộc để hàm là async generator hợp lệ
+
+    monkeypatch.setattr("app.services.chat_service.stream_agent_reply", failing_stream_agent_reply)
+
+    tokens = _register_and_login(client, CHAT_FLOW_PAYLOAD)
+    with client.websocket_connect(f"/api/v1/ws/chat?token={tokens['access_token']}") as ws:
+        ws.receive_json()  # "connected"
+
+        ws.send_json({"message": "Xin chào"})
+        assert ws.receive_json() == {"type": "error", "message": "Trợ lý đang bận, vui lòng thử lại sau"}
+
+        # Kết nối VẪN dùng được sau lỗi - không bị đóng.
+        ws.send_json({"message": "Thử lại lần nữa"})
+        assert ws.receive_json() == {"type": "error", "message": "Trợ lý đang bận, vui lòng thử lại sau"}

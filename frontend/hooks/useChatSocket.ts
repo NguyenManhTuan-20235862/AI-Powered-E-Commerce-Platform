@@ -53,6 +53,12 @@ function randomId(): string {
 export function useChatSocket({ enabled, onServerError }: { enabled: boolean; onServerError?: (message: string) => void }) {
   const [status, setStatus] = useState<ChatConnectionStatus>("idle");
   const [messages, setMessages] = useState<ChatMessageItem[]>([]);
+  // task 6.1.2 - true từ lúc gửi tin nhắn tới lúc nhận "done"/"error" - khóa
+  // input/nút gửi phía ChatPanel.tsx (chống gửi chồng chéo lên câu đang xử
+  // lý, quyết định đã chốt). Đặt lại về false cả khi "onclose" xảy ra giữa
+  // chừng (phòng trường hợp mất kết nối trước khi kịp nhận "done"/"error" -
+  // không để input bị khóa vĩnh viễn).
+  const [isStreaming, setIsStreaming] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const retryCountRef = useRef(0);
@@ -109,20 +115,45 @@ export function useChatSocket({ enabled, onServerError }: { enabled: boolean; on
         return;
       }
 
-      if (data.type === "reply") {
-        setMessages((prev) => [...prev, { id: randomId(), role: data.role, message: data.message }]);
+      if (data.type === "chunk") {
+        // Tin cuối cùng trong danh sách là "assistant" <=> đây LÀ tin đang
+        // stream dở (được tạo bởi chính chunk ĐẦU TIÊN của lượt trả lời
+        // này) - nối `content` vào tin đó. Ngược lại (tin cuối là "user",
+        // vừa gửi xong) <=> đây là chunk ĐẦU TIÊN - tạo tin assistant mới.
+        // KHÔNG cần thêm state/ref nào để phân biệt 2 case này: input đã bị
+        // khóa suốt lúc `isStreaming`, không thể có tin "user" mới chen vào
+        // giữa 1 lượt đang stream, nên "tin cuối là gì" luôn phản ánh đúng.
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "assistant") {
+            return [...prev.slice(0, -1), { ...last, message: last.message + data.content }];
+          }
+          return [...prev, { id: randomId(), role: "assistant", message: data.content }];
+        });
         return;
       }
 
-      // "error" (task 5.1.1 - tin nhắn sai schema/lỗi hạ tầng lúc lưu) - lỗi
-      // TẠM THỜI cho 1 tin nhắn cụ thể, KHÔNG đại diện cho việc mất kết nối,
-      // không đưa vào danh sách message (giữ message list chỉ chứa hội thoại
-      // thật) - hiện qua toast riêng, xem ChatWidget.tsx.
+      if (data.type === "done") {
+        setIsStreaming(false);
+        return;
+      }
+
+      // "error" (task 5.1.1 - tin nhắn sai schema/lỗi hạ tầng lúc lưu; task
+      // 6.1.2 - LLM không kết nối được/treo) - lỗi TẠM THỜI cho 1 tin nhắn cụ
+      // thể, KHÔNG đại diện cho việc mất kết nối, không đưa vào danh sách
+      // message (giữ message list chỉ chứa hội thoại thật) - hiện qua toast
+      // riêng, xem ChatWidget.tsx. Mở khóa lại input NGAY (không đợi "done" -
+      // lỗi nghĩa là lượt này coi như hỏng, không có "done" theo sau).
+      setIsStreaming(false);
       onServerErrorRef.current?.(data.message);
     };
 
     ws.onclose = () => {
       wsRef.current = null;
+      // Phòng trường hợp mất kết nối GIỮA CHỪNG lúc đang stream (không kịp
+      // nhận "done"/"error") - không để input bị khóa vĩnh viễn sau khi mất
+      // kết nối/reconnect.
+      setIsStreaming(false);
       if (intentionalCloseRef.current) {
         setStatus("idle");
         return;
@@ -164,6 +195,7 @@ export function useChatSocket({ enabled, onServerError }: { enabled: boolean; on
     // HIỂN THỊ tin nhắn user vừa gửi (khác nguyên tắc CartContext - ở đây
     // không có khái niệm "Backend từ chối 1 phần" cho 1 tin nhắn chat).
     setMessages((prev) => [...prev, { id: randomId(), role: "user", message: trimmed }]);
+    setIsStreaming(true);
     wsRef.current.send(JSON.stringify({ message: trimmed }));
   }, []);
 
@@ -179,5 +211,5 @@ export function useChatSocket({ enabled, onServerError }: { enabled: boolean; on
     };
   }, [enabled, connect, clearRetryTimer]);
 
-  return { status, messages, sendMessage, retryNow };
+  return { status, messages, isStreaming, sendMessage, retryNow };
 }
