@@ -27,6 +27,11 @@ export function LoginForm() {
   const { refetch } = useAuthContext();
   const searchParams = useSearchParams();
   const justRegistered = searchParams.get("registered") === "1";
+  // `?session_expired=1` - `lib/axios.ts:redirectToLogin()` tự thêm param này
+  // lúc điều hướng cưỡng bức về đây (401 không refresh được) - giải thích RÕ
+  // LÝ DO bị đưa về trang đăng nhập, thay vì im lặng, cùng pattern
+  // `justRegistered` ở trên (task "Dọn frontend để không còn màn hình giả").
+  const sessionExpired = searchParams.get("session_expired") === "1";
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
@@ -65,6 +70,9 @@ export function LoginForm() {
       {justRegistered && !serverError && (
         <p className="auth-banner auth-banner-success">Đăng ký thành công, vui lòng đăng nhập.</p>
       )}
+      {sessionExpired && !serverError && (
+        <p className="auth-banner auth-banner-error">Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.</p>
+      )}
       {serverError && <p className="auth-banner auth-banner-error">{serverError}</p>}
       <form onSubmit={handleSubmit(onSubmit)} className="auth-form" noValidate>
         <div className="field">
@@ -79,13 +87,15 @@ export function LoginForm() {
           {errors.password && <p className="field-error">{errors.password.message}</p>}
         </div>
 
+        {/* KHÔNG có "Quên mật khẩu?" - Backend/dự án chưa có hạ tầng gửi email
+            nào (không SMTP, không token reset lưu DB) nên chưa thể làm THẬT;
+            giữ 1 link trông như bấm được nhưng chỉ preventDefault() đúng loại
+            "màn hình giả" cần dọn ở task này - bỏ hẳn thay vì giữ placeholder
+            vô thời hạn. */}
         <div className="auth-row">
           <label className="auth-checkbox">
             <input type="checkbox" {...register("remember")} /> Ghi nhớ đăng nhập
           </label>
-          <a href="#" onClick={(e) => e.preventDefault()} className="auth-link">
-            Quên mật khẩu?
-          </a>
         </div>
 
         <button type="submit" className="btn btn-primary btn-block" disabled={isSubmitting}>

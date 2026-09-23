@@ -307,6 +307,68 @@ lại, không đổi):
   đồ án hiện tại — không giữ `501` vô thời hạn, quyết định dứt điểm thay vì
   để treo.
 
+**Dọn frontend để không còn màn hình giả** (task "Dọn frontend để không còn
+màn hình giả") — nguyên tắc áp dụng xuyên suốt: KHÔNG còn nút/link nhìn như
+dùng được nhưng thực tế không có hành vi (implement thật, hoặc bỏ hẳn, không
+giữ placeholder vô thời hạn):
+
+- **`/chat` (route trang riêng) ĐÃ XÓA** - trước đó chỉ là stub tĩnh "sẽ
+  triển khai sau" (`app/(customer)/chat/page.tsx`), nhưng `ChatWidget.tsx`
+  (nút nổi, task 5.1.2) đã là chat AI THẬT từ lâu (`/ws/chat` stream LLM thật
+  từ task 6.1.1-6.1.2, xem đoạn "Streaming AI `/ws/chat`" bên dưới) - hiện
+  sẵn trên MỌI trang Customer đã đăng nhập (`app/(customer)/layout.tsx`).
+  Giữ 1 route `/chat` trỏ tới trang tĩnh trùng lặp, kém hơn hẳn widget thật
+  là đúng loại "màn hình giả" cần dọn - bỏ nav item "Chat AI" khỏi CẢ
+  `Header.tsx` LẪN `Footer.tsx` (2 nơi, không chỉ 1), không cần "chuyển
+  hướng" vì widget vốn đã nổi sẵn không cần link.
+- **"Quên mật khẩu?" (`LoginForm.tsx`) ĐÃ BỎ** - trước đó `href="#"` +
+  `preventDefault()`, KHÔNG có hành vi gì. Quyết định: BỎ hẳn (không implement
+  thật) - dự án CHƯA có hạ tầng gửi email nào (không SMTP, không service như
+  SendGrid, không bảng lưu token reset) - xây tính năng reset mật khẩu qua
+  email cho ĐÚNG 1 link trong 1 task "dọn dẹp UI giả" không tương xứng, đây
+  là đầu tư hạ tầng mới hoàn toàn chứ không phải dọn dẹp.
+- **Thống nhất xử lý 401 vào ĐÚNG 1 NƠI** (`lib/axios.ts`, interceptor response
+  đã có sẵn từ trước - KHÔNG viết lại từ đầu) - trước đó `OrderDetailView.tsx`
+  tự có nhánh xử lý 401 RIÊNG (`router.replace("/login")`) chạy SONG SONG,
+  ĐUA với chính điều hướng `window.location.href` của interceptor cho CÙNG 1
+  lỗi 401 - 2 cơ chế redirect cùng lúc. `redirectToLogin()` giờ điều hướng
+  `/login?session_expired=1` (banner giải thích LÝ DO, `LoginForm.tsx` đọc
+  param này - cùng pattern `?registered=1` đã có) VÀ - quan trọng hơn - khi
+  ĐÃ chắc chắn điều hướng (không refresh được, hoặc thiếu refresh token, và
+  KHÔNG đánh dấu `skipAuthRedirect`), promise trả về `abandon()` (KHÔNG BAO
+  GIỜ resolve/reject) thay vì `Promise.reject(error)` - lý do: hàng chục
+  component khắp app CHỈ generic `catch` + `toast.error(extractApiErrorMessage(...))`
+  cho MỌI loại lỗi (không riêng 401) - nếu vẫn reject bình thường, TẤT CẢ
+  những nơi đó sẽ NHÁY 1 thông báo lỗi sai ngữ cảnh ("Không tải được sản
+  phẩm"...) đúng lúc trang đang điều hướng đi - "bỏ rơi" promise ở ĐÚNG 1 chỗ
+  (interceptor) khiến MỌI component tự động im lặng chờ điều hướng, không
+  cần sửa từng nơi riêng lẻ. `OrderDetailView.tsx` bỏ hẳn nhánh 401 riêng (dead
+  code sau thay đổi này - promise không bao giờ reject cho case đó nữa).
+  `skipAuthRedirect: true` (dùng cho `GET /auth/me`/`POST /auth/logout` NỀN
+  lúc `AuthProvider` mount) KHÔNG bị ảnh hưởng - vẫn reject bình thường như cũ.
+- **Thêm `app/not-found.tsx` + `app/error.tsx` + `app/global-error.tsx`**
+  (trước đây KHÔNG có file nào trong 3 file này - Next.js tự hiện trang lỗi
+  mặc định, trắng, không theo design token) - `not-found.tsx`/`error.tsx`
+  render BÊN TRONG `RootLayout` như 1 page thường (dùng chung design token/
+  Tailwind class được). `global-error.tsx` CHỈ kích hoạt khi CHÍNH
+  `RootLayout` throw (hiếm) - PHẢI tự khai lại `<html>`/`<body>` (Next.js quy
+  định, thay thế hẳn layout gốc lúc đó) - cố tình viết ĐƠN GIẢN NHẤT (CSS
+  inline, không import font/Provider nào) vì chính những thứ đó có thể là
+  nguyên nhân gây lỗi tầng layout gốc.
+- **`Sidebar.tsx` (Admin) - sửa nốt bug `bg-foreground/40`** (đóng
+  `docs/KNOWN_TODOS.md` #24, cùng loại lỗi + cách sửa đã áp dụng cho
+  `ProductFilters.tsx`/`ProductFormModal.tsx` trước đó) - đổi sang
+  `bg-black/40`, overlay drawer mobile Admin giờ tối thật thay vì trong suốt
+  hoàn toàn (Tailwind không áp được opacity modifier lên `foreground.DEFAULT`
+  vì đây là CSS custom property trần, không phải giá trị màu tĩnh).
+- **VNPay/Momo (`CheckoutForm.tsx`) - RÀ SOÁT LẠI, GIỮ NGUYÊN** (không phải
+  "màn hình giả" cần dọn) - radio đã `disabled` thật (không có state/onChange
+  giả), `cursor-not-allowed` + `opacity-60 grayscale` + badge "Sắp ra mắt" rõ
+  ràng, KHÔNG bọc trong `<label>` nên bấm vào chữ cũng không có hành vi gì -
+  khác hẳn 1 link/nút trông bấm được nhưng im lặng không làm gì (đúng tinh
+  thần nguyên tắc của task này, chỉ khác cách thể hiện "chưa hỗ trợ" so với
+  bỏ hẳn - cả 2 đều hợp lệ, giữ nguyên vì không gây hiểu lầm).
+
 `lib/axios.ts` (interceptor gắn JWT, CLIENT), `lib/api-server.ts` (fetch phía
 SERVER, task 4.2.1 — xem `API_INTERNAL_URL` bên dưới), `lib/auth.ts` (token
 localStorage), `hooks/useAuth.ts`, `types/` (`common.ts` — envelope

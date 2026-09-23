@@ -1,9 +1,10 @@
 import Link from "next/link";
 
+// KHÔNG có "Chat AI" (cùng lý do Header.tsx - trang `/chat` chỉ là stub tĩnh
+// đã bị xóa, chat AI thật dùng ChatWidget.tsx nổi trên mọi trang).
 const QUICK_LINKS = [
   { href: "/", label: "Trang chủ" },
   { href: "/products", label: "Sản phẩm" },
-  { href: "/chat", label: "Chat AI" },
   { href: "/orders", label: "Đơn hàng của tôi" },
 ];
 

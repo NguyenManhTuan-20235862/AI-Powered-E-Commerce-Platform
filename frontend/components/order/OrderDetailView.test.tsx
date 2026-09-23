@@ -111,13 +111,14 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
     expect(mockGet).toHaveBeenCalledWith("/orders/10");
   });
 
-  it("401 - điều hướng /login, KHÔNG hiện nội dung đơn hàng", async () => {
-    mockGet.mockRejectedValue(httpError(401));
-    render(<OrderDetailView orderId={10} />);
-
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/login"));
-    expect(screen.queryByText("Đơn hàng #10")).not.toBeInTheDocument();
-  });
+  // KHÔNG còn test "401 -> điều hướng /login" ở đây - trách nhiệm này đã
+  // chuyển hẳn về `lib/axios.ts` (interceptor tự điều hướng + "bỏ rơi"
+  // promise, xem `axios.test.ts`) sau khi dọn dẹp 2 cơ chế redirect race
+  // nhau (task "Dọn frontend để không còn màn hình giả") - component này
+  // giờ KHÔNG BAO GIỜ nhận được 1 lỗi 401 thật để mà catch (promise từ
+  // `api.get()` không bao giờ resolve/reject cho case đó trong thực tế),
+  // nên mock `mockGet.mockRejectedValue(httpError(401))` không còn phản ánh
+  // đúng hành vi thật nữa.
 
   it("403 - hiện thông báo không có quyền + link quay lại, KHÔNG điều hướng /login", async () => {
     mockGet.mockRejectedValue(httpError(403));

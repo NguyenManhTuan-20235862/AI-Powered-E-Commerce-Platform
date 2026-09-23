@@ -37,8 +37,14 @@ export function Sidebar() {
       </div>
 
       {isOpen && (
+        // bg-black/40 (KHÔNG PHẢI bg-foreground/40) - Tailwind không áp được
+        // opacity modifier lên màu trỏ thẳng CSS custom property trần
+        // (`foreground.DEFAULT: "var(--color-text)"`, tailwind.config.ts) -
+        // compile ra rgba(0,0,0,0) trong suốt hoàn toàn, KHÔNG PHẢI overlay
+        // tối như ý định (đóng docs/KNOWN_TODOS.md #24, cùng lỗi/cách sửa đã
+        // xác nhận cho `ProductFilters.tsx`/`ProductFormModal.tsx`).
         <div
-          className="fixed inset-0 z-40 bg-foreground/40 md:hidden"
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
           onClick={() => setIsOpen(false)}
           aria-hidden="true"
         />
