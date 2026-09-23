@@ -121,7 +121,15 @@
 | Method | Path | Mô tả | Quyền truy cập | Role |
 |--------|------|-------|-----------------|------|
 | SSE | `/notifications/orders/stream` | Stream sự kiện cập nhật trạng thái đơn hàng realtime | 🔒 Auth | Customer |
-| SSE | `/notifications/admin/stream` | Stream sự kiện đơn hàng mới, thống kê realtime cho Admin | 🔒 Auth | Admin |
+
+**`/notifications/admin/stream` đã CHÍNH THỨC LOẠI KHỎI PHẠM VI** (task "Hoàn
+thiện dashboard và realtime Admin", trước đó chỉ là `501` placeholder từ task
+5.2.1) - xem quyết định đầy đủ ở `CLAUDE.md` mục "Quản trị dashboard và
+realtime Admin". Toàn bộ Admin panel (đơn hàng/kho/sản phẩm/dashboard) dùng
+mô hình fetch-khi-mở-trang/bấm-làm-mới nhất quán, không có mặt SSE/WebSocket
+nào khác ở phía Admin - thêm 1 kênh realtime CHỈ cho thông báo đơn mới sẽ là
+bề mặt UI/hạ tầng MỚI duy nhất không nhất quán với phần còn lại, trong khi
+chưa có nhu cầu thật nào vượt quá "Admin bấm làm mới khi cần xem đơn mới".
 
 ---
 

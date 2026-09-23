@@ -262,6 +262,51 @@ qua `get_or_set_cache` có sẵn, TTL 300s (5 phút) — **KHÔNG active-invalid
 khi đơn hàng đổi trạng thái (khác `product_service.py` cho CRUD sản phẩm) -
 đã xác nhận dữ liệu thống kê không cần tức thời, chấp nhận độ trễ tới 5 phút.
 
+**Quản trị dashboard và realtime Admin** (task "Hoàn thiện dashboard và
+realtime Admin") — hoàn thiện thêm cho dashboard đã có (task 5.3.1/5.3.2),
+**GIỮ NGUYÊN** quyết định "fetch khi mở trang/bấm làm mới" ở trên (xác nhận
+lại, không đổi):
+
+- **Validate `date_from <= date_to`** (`dashboard_service.resolve_date_range()`,
+  400 nếu sai) — trước đây thiếu bước này, khoảng ngày đảo ngược không lỗi rõ
+  ràng mà âm thầm trả kết quả RỖNG (mọi filter `created_at >= date_from AND
+  created_at < date_to + 1 ngày` luôn `False`), dễ hiểu lầm "không có dữ
+  liệu". Validate ĐÚNG 1 chỗ (hàm dùng chung cho cả 3 endpoint), không lặp
+  lại ở từng router.
+- **`app/admin/dashboard/page.tsx`** — bộ chọn khoảng ngày THẬT (2 input
+  `type="date"`, thay nút "Khoảng ngày" decorative/disabled cũ) + bộ chọn
+  interval Ngày/Tuần/Tháng cho biểu đồ doanh thu (trước đó hardcode `"day"`,
+  Backend đã hỗ trợ `interval` từ task 5.3.1, chỉ thiếu UI). Đổi khoảng
+  ngày/interval refetch CẢ 3 API cùng lúc (kể cả khi chỉ đổi interval, vốn
+  chỉ ảnh hưởng `/revenue`) — chấp nhận 2 lệnh gọi dư cho `summary`/
+  `top-products` vì Backend đã cache Redis (TTL 5 phút, cùng tham số) —
+  không đáng tách riêng 2 effect cho quy mô đồ án. Input ngày mặc định RỖNG,
+  tự điền lại bằng khoảng THẬT Backend áp dụng (`summary.date_from`/`date_to`)
+  sau lần fetch đầu — CHỈ 1 LẦN (guard qua `useRef`, không phải state, tránh
+  vòng lặp effect). Validate `date_from <= date_to` CẢ 2 phía (Frontend chặn
+  trước khi gọi API + Backend vẫn tự validate lại làm tuyến phòng thủ cuối).
+- **Tách rõ trạng thái LỖI (`loadError`) khỏi trạng thái RỖNG THẬT** (cùng
+  pattern `OrdersView.tsx`) — trước đây lỗi fetch (`Promise.all` reject) chỉ
+  hiện toast rồi rơi vào giao diện trông giống "chưa có dữ liệu" (KPI hiện
+  "-", biểu đồ hiện "Chưa có dữ liệu..."), Admin không phân biệt được "API
+  lỗi" với "khoảng ngày này thật sự không có đơn nào" — giờ lỗi hiện khối
+  riêng + nút "Thử lại", KHÔNG lẫn với thông báo rỗng của từng chart.
+- **`GET /notifications/admin/stream` CHÍNH THỨC LOẠI KHỎI PHẠM VI** (trước
+  đó chỉ là `501` placeholder từ task 5.2.1, đã XÓA HẲN route, cập nhật
+  `docs/API_SPEC.md`) — quyết định: toàn bộ Admin panel (đơn hàng/kho/sản
+  phẩm/dashboard) nhất quán dùng mô hình fetch-khi-mở-trang/bấm-làm-mới,
+  KHÔNG có mặt SSE/WebSocket nào khác ở phía Admin (khác Customer, có SSE
+  `/notifications/orders/stream` phục vụ 1 nhu cầu hẹp: user đang xem trang
+  đơn hàng CỦA CHÍNH MÌNH). Thêm 1 kênh realtime riêng chỉ để báo "có đơn
+  mới" sẽ là bề mặt UI/hạ tầng MỚI DUY NHẤT không nhất quán với phần còn lại
+  (cần thêm: publish event lúc `POST /orders` tạo đơn thành công — hiện
+  `notification_service.py` chỉ publish lúc đổi TRẠNG THÁI đơn qua `PUT
+  /orders/{id}/status`, KHÔNG phải lúc TẠO đơn; + 1 bề mặt UI mới hoàn toàn
+  trong Admin layout, VD chuông thông báo — chưa tồn tại), trong khi chưa có
+  nhu cầu thật nào vượt quá "Admin bấm làm mới khi cần xem đơn mới" ở quy mô
+  đồ án hiện tại — không giữ `501` vô thời hạn, quyết định dứt điểm thay vì
+  để treo.
+
 `lib/axios.ts` (interceptor gắn JWT, CLIENT), `lib/api-server.ts` (fetch phía
 SERVER, task 4.2.1 — xem `API_INTERNAL_URL` bên dưới), `lib/auth.ts` (token
 localStorage), `hooks/useAuth.ts`, `types/` (`common.ts` — envelope

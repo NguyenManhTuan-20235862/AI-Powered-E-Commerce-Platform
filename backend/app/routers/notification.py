@@ -1,8 +1,11 @@
 """Router: Notification / Realtime Module (SSE).
 
 Khung endpoint theo docs/API_SPEC.md - mục 9. `/orders/stream` (task 5.2.1)
-đã có logic thật - `/admin/stream` (đơn hàng mới/thống kê Admin) vẫn
-placeholder, để dành task khác (ngoài phạm vi 5.2.1).
+đã có logic thật. `/admin/stream` (đơn hàng mới/thống kê realtime cho Admin)
+ĐÃ LOẠI KHỎI PHẠM VI (task "Hoàn thiện dashboard và realtime Admin") - xem
+quyết định đầy đủ ở CLAUDE.md mục "Quản trị dashboard và realtime Admin",
+KHÔNG còn tồn tại route `501` này nữa (đã xóa hẳn, không giữ placeholder vô
+thời hạn).
 
 `/orders/stream` (task 5.2.1) - xác thực qua JWT ở QUERY PARAM (`?token=...`),
 KHÔNG PHẢI Authorization header như REST - `EventSource` (Web API chuẩn cho
@@ -31,7 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db, get_redis
 from app.core.openapi_responses import auth_responses
-from app.core.security import get_current_user, get_token_payload, require_role
+from app.core.security import get_current_user, get_token_payload
 from app.models.user import User, UserRole
 from app.services.notification_service import order_updates_channel
 
@@ -144,16 +147,3 @@ async def stream_order_updates(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-
-@router.get(
-    "/admin/stream",
-    summary="Stream sự kiện đơn hàng mới, thống kê realtime cho Admin (SSE)",
-    responses=auth_responses(forbidden=True),
-)
-def stream_admin_events(current_user: Annotated[User, Depends(require_role(UserRole.admin))]) -> None:
-    """Stream sự kiện đơn hàng mới, thống kê realtime cho Admin (SSE). Yêu cầu: Admin.
-
-    TODO: implement thật ở task riêng (ngoài phạm vi 5.2.1).
-    """
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Chưa triển khai - task 9.x")
