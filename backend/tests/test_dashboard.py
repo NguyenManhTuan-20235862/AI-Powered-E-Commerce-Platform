@@ -358,6 +358,36 @@ def test_top_products_respects_limit(client: TestClient, db: Session) -> None:
     assert len(response.json()["data"]) == 2
 
 
+# ---- Validate date_from <= date_to (task "Hoàn thiện dashboard và realtime Admin") ----
+
+
+@pytest.mark.parametrize("path", ["summary", "revenue", "top-products"])
+def test_date_from_after_date_to_returns_400(client: TestClient, db: Session, path: str) -> None:
+    """Cả 3 endpoint đều đi qua `dashboard_service.resolve_date_range()` -
+    `date_from` SAU `date_to` phải bị từ chối rõ ràng (400), không âm thầm
+    trả kết quả rỗng khiến Admin hiểu lầm "không có dữ liệu"."""
+    admin_headers = _admin_headers(db)
+    params = {"date_from": TODAY.isoformat(), "date_to": (TODAY - timedelta(days=1)).isoformat()}
+
+    response = client.get(f"/api/v1/admin/dashboard/{path}", params=params, headers=admin_headers)
+
+    assert response.status_code == 400, response.text
+    assert "date_from" in response.json()["message"]
+
+
+def test_date_from_equals_date_to_is_valid(client: TestClient, db: Session) -> None:
+    """Biên hợp lệ - `date_from == date_to` (1 ngày duy nhất) KHÔNG bị từ chối."""
+    admin_headers = _admin_headers(db)
+
+    response = client.get(
+        "/api/v1/admin/dashboard/summary",
+        params={"date_from": TODAY.isoformat(), "date_to": TODAY.isoformat()},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+
+
 # ---- Cache (Redis, TTL 5 phút) ----
 
 

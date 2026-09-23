@@ -32,6 +32,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
+from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -55,7 +56,18 @@ def resolve_date_range(date_from: date | None, date_to: date | None) -> tuple[da
     """`date_to` mặc định hôm nay, `date_from` mặc định `DEFAULT_LOOKBACK_DAYS`
     ngày TRƯỚC `date_to` (không phải trước hôm nay - nếu Admin CHỈ truyền
     `date_to` trong quá khứ, khoảng 30 ngày phải tính lùi từ mốc đó, không
-    phải từ hôm nay)."""
+    phải từ hôm nay).
+
+    Validate `date_from <= date_to` KHI CẢ 2 đều được truyền tường minh (task
+    "Hoàn thiện dashboard và realtime Admin") - chỉ cần check ở ĐÚNG 1 chỗ vì
+    cả 3 endpoint (`summary`/`revenue`/`top-products`) đều gọi qua hàm này
+    trước khi query, tránh lặp validate 3 nơi. Trước đây thiếu bước này -
+    `date_from > date_to` không lỗi rõ ràng, chỉ âm thầm trả kết quả RỖNG
+    (mọi filter `created_at >= date_from AND created_at < date_to + 1 ngày`
+    luôn False), dễ hiểu lầm thành "không có dữ liệu" thay vì "khoảng ngày
+    nhập sai" - 1 trong các gap "Hiển thị lỗi/dữ liệu rỗng rõ hơn" đã xác định."""
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise HTTPException(status_code=400, detail="date_from phải trước hoặc bằng date_to")
     resolved_to = date_to if date_to is not None else date.today()
     resolved_from = date_from if date_from is not None else resolved_to - timedelta(days=DEFAULT_LOOKBACK_DAYS - 1)
     return resolved_from, resolved_to

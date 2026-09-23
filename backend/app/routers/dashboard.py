@@ -30,7 +30,7 @@ router = APIRouter(prefix="/admin/dashboard", tags=["Dashboard Admin"])
     "/summary",
     response_model=APIResponse[DashboardSummaryRead],
     summary="Tổng quan: tổng doanh thu, số đơn hàng, số user mới",
-    responses=auth_responses(forbidden=True),
+    responses={**auth_responses(forbidden=True), 400: {"description": "date_from sau date_to"}},
 )
 def get_summary(
     current_user: Annotated[User, Depends(require_role(UserRole.admin))],
@@ -59,7 +59,7 @@ def get_summary(
     "/revenue",
     response_model=APIResponse[list[RevenuePointRead]],
     summary="Doanh thu theo ngày/tuần/tháng",
-    responses=auth_responses(forbidden=True),
+    responses={**auth_responses(forbidden=True), 400: {"description": "date_from sau date_to"}},
 )
 def get_revenue(
     current_user: Annotated[User, Depends(require_role(UserRole.admin))],
@@ -89,7 +89,7 @@ def get_revenue(
     "/top-products",
     response_model=APIResponse[list[TopProductRead]],
     summary="Top sản phẩm bán chạy",
-    responses=auth_responses(forbidden=True),
+    responses={**auth_responses(forbidden=True), 400: {"description": "date_from sau date_to"}},
 )
 def get_top_products(
     current_user: Annotated[User, Depends(require_role(UserRole.admin))],
