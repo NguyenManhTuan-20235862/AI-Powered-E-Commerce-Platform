@@ -2,7 +2,6 @@
 
 import { AxiosError } from "axios";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -15,7 +14,7 @@ import type { ApiResponse } from "@/types/common";
 import type { OrderStatusEvent } from "@/types/notification";
 import type { Order } from "@/types/order";
 
-type LoadState = "loading" | "ready" | "unauthenticated" | "forbidden" | "not-found" | "network-error" | "error";
+type LoadState = "loading" | "ready" | "forbidden" | "not-found" | "network-error" | "error";
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("vi-VN", {
@@ -40,11 +39,16 @@ const STREAM_BANNER_LABEL: Record<string, string | null> = {
  * `app/(customer)/orders/[id]/page.tsx`). Client Component (cùng lý do
  * `OrdersView.tsx`: cần tương tác - hủy đơn, đồng bộ SSE ngay - hơn cần SEO).
  *
- * Phân biệt RÕ 4 loại lỗi HTTP (`GET /orders/{id}`, `app/routers/order.py`)
+ * Phân biệt RÕ các loại lỗi HTTP (`GET /orders/{id}`, `app/routers/order.py`)
  * thay vì 1 thông báo lỗi chung chung:
- * - 401: chưa đăng nhập/token hết hạn - đưa về `/login` (trang này KHÔNG có
- *   guard riêng như `AdminAuthGuard` - tự xử lý ngay tại chỗ dựa trên response
- *   thật, đơn giản hơn cho đúng 1 trang).
+ * - 401: KHÔNG tự xử lý ở đây (trước đây có `router.replace("/login")` riêng,
+ *   ĐUA với chính điều hướng của `lib/axios.ts` - cùng 1 lúc 2 cơ chế redirect
+ *   race nhau). Thống nhất về ĐÚNG 1 nơi (task "Dọn frontend để không còn màn
+ *   hình giả") - `lib/axios.ts` interceptor tự phát hiện 401 không refresh
+ *   được, tự điều hướng cứng `/login?session_expired=1` VÀ "bỏ rơi" promise
+ *   (không bao giờ resolve/reject) - `fetchOrder()` không bao giờ vào nhánh
+ *   catch cho case này, `loadState` giữ nguyên `"loading"` cho tới khi trình
+ *   duyệt thật sự điều hướng đi (không còn hiện nhầm lỗi generic).
  * - 403: đã đăng nhập nhưng KHÔNG phải chủ đơn (`order.user_id != current_user.id`,
  *   xem `app/routers/order.py:get_order()`) - hiện thông báo + link quay lại
  *   danh sách, KHÔNG redirect (khác 401, đây không phải lỗi phiên đăng nhập).
@@ -54,7 +58,6 @@ const STREAM_BANNER_LABEL: Record<string, string | null> = {
  *   nghĩa cho 403/404 - lỗi đó KHÔNG tự hết khi gọi lại).
  */
 export function OrderDetailView({ orderId }: { orderId: number }) {
-  const router = useRouter();
   const [order, setOrder] = useState<Order | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -69,10 +72,6 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
       setLoadState("ready");
     } catch (err) {
       if (err instanceof AxiosError && err.response) {
-        if (err.response.status === 401) {
-          setLoadState("unauthenticated");
-          return;
-        }
         if (err.response.status === 403) {
           setLoadState("forbidden");
           return;
@@ -95,12 +94,6 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
   useEffect(() => {
     fetchOrder();
   }, [fetchOrder]);
-
-  useEffect(() => {
-    if (loadState === "unauthenticated") {
-      router.replace("/login");
-    }
-  }, [loadState, router]);
 
   async function handleCancel() {
     if (!order) return;
@@ -137,7 +130,7 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
     onOrderStatus: handleOrderStatusEvent,
   });
 
-  if (loadState === "loading" || loadState === "unauthenticated") {
+  if (loadState === "loading") {
     return (
       <div className="mx-auto max-w-5xl px-4 py-16 text-center text-foreground-muted">Đang tải...</div>
     );

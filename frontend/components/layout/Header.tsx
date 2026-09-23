@@ -7,10 +7,14 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/context/CartContext";
 
+// KHÔNG có "Chat AI" ở đây (đã từng trỏ tới `/chat` - trang stub tĩnh "sẽ
+// triển khai sau", dọn dẹp ở task "Dọn frontend để không còn màn hình giả")
+// - chat AI THẬT đã có sẵn qua `ChatWidget.tsx` (nút nổi, mọi trang Customer
+// đã đăng nhập, xem `app/(customer)/layout.tsx`), không cần thêm 1 route
+// trang riêng trùng lặp chức năng.
 const NAV_ITEMS = [
   { href: "/", label: "Trang chủ" },
   { href: "/products", label: "Sản phẩm" },
-  { href: "/chat", label: "Chat AI" },
 ];
 
 export function Header() {

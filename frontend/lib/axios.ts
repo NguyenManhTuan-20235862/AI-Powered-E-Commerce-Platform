@@ -41,7 +41,9 @@ api.interceptors.request.use((config) => {
 // sẽ tự đệ quy vào chính interceptor này mỗi khi refresh thất bại (401) - vẫn
 // thoát được nhờ nhánh loại trừ URL, nhưng gọi redirectToLogin() 2 lần không
 // cần thiết; instance riêng đơn giản hơn, không có rủi ro đệ quy nào cả.
-const refreshApi = axios.create({
+// `export` CHỈ để `axios.test.ts` gắn `adapter` giả lên đúng instance này khi
+// test luồng refresh - không dùng ở nơi khác trong app.
+export const refreshApi = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL,
   headers: { "Content-Type": "application/json" },
 });
@@ -57,11 +59,36 @@ type RefreshApiResponse = {
 // và refresh token có thể đã bị đổi/blacklist khiến lần gọi sau thất bại oan).
 let refreshPromise: Promise<string> | null = null;
 
+/**
+ * `?session_expired=1` - `LoginForm.tsx` đọc query param này (cùng pattern
+ * `?registered=1` đã có) để hiện banner giải thích LÝ DO bị đưa về đây, thay
+ * vì im lặng "vừa đang ở trang X, tự nhiên bị đá sang trang đăng nhập" -
+ * KHÔNG áp dụng cho case chủ động bấm "Đăng xuất" (không gọi qua đây, xem
+ * `AuthContext.tsx:logout()`).
+ */
 function redirectToLogin(): void {
   clearTokens();
   if (typeof window !== "undefined") {
-    window.location.href = "/login";
+    window.location.href = "/login?session_expired=1";
   }
+}
+
+/**
+ * Promise KHÔNG BAO GIỜ resolve/reject - dùng thay `Promise.reject(error)`
+ * ở CẢ 2 nhánh vừa gọi `redirectToLogin()` bên dưới (task "Dọn frontend để
+ * không còn màn hình giả" - thống nhất xử lý 401, xem CLAUDE.md mục liên
+ * quan). Lý do: trình duyệt SẮP điều hướng hẳn sang `/login` (gán
+ * `window.location.href`, không phải Next.js router) - nếu vẫn để promise
+ * reject bình thường, MỌI `.catch()`/`try-catch` ở tầng gọi (hàng chục
+ * component khắp app, mỗi nơi tự viết message lỗi khác nhau - "Không tải
+ * được sản phẩm", "Không tải được đơn hàng"...) đều sẽ NHÁY 1 thông báo lỗi
+ * chung chung/sai ngữ cảnh ngay trước khi trang thật sự rời đi - không nhất
+ * quán và gây hiểu lầm (trông như lỗi tải dữ liệu thay vì hết phiên đăng
+ * nhập). "Bỏ rơi" promise ở ĐÚNG 1 chỗ này khiến MỌI nơi gọi API tự động im
+ * lặng chờ điều hướng, không cần sửa từng component riêng lẻ.
+ */
+function abandon<T>(): Promise<T> {
+  return new Promise<T>(() => {});
 }
 
 type RetriableConfig = InternalAxiosRequestConfig & { _retriedAfterRefresh?: boolean };
@@ -86,8 +113,9 @@ api.interceptors.response.use(
 
     const refreshToken = getRefreshToken();
     if (!refreshToken) {
-      if (!originalRequest.skipAuthRedirect) redirectToLogin();
-      return Promise.reject(error);
+      if (originalRequest.skipAuthRedirect) return Promise.reject(error);
+      redirectToLogin();
+      return abandon();
     }
 
     originalRequest._retriedAfterRefresh = true;
@@ -110,8 +138,9 @@ api.interceptors.response.use(
       originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
       return api(originalRequest);
     } catch (refreshError) {
-      if (!originalRequest.skipAuthRedirect) redirectToLogin();
-      return Promise.reject(refreshError);
+      if (originalRequest.skipAuthRedirect) return Promise.reject(refreshError);
+      redirectToLogin();
+      return abandon();
     }
   },
 );
