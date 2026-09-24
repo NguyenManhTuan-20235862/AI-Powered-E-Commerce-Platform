@@ -29,8 +29,10 @@ export interface Order {
   updated_at: string;
 }
 
-// Payload POST /orders - snapshot lúc đặt, KHÔNG có payment_method (hệ thống
-// hiện chỉ hỗ trợ COD, xem CLAUDE.md mục Notes).
+// Payload POST /orders - snapshot lúc đặt, KHÔNG có payment_method (đặt hàng
+// LUÔN tạo Order giống nhau bất kể phương thức - VNPay là bước THỨ HAI xảy
+// ra SAU khi Order đã tồn tại, xem types/payment.ts + CLAUDE.md mục "Quyết
+// định và hoàn thiện thanh toán").
 export interface OrderCreatePayload {
   shipping_name: string;
   shipping_address: string;

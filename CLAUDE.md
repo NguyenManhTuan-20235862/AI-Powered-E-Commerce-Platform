@@ -368,13 +368,92 @@ giữ placeholder vô thời hạn):
   `bg-black/40`, overlay drawer mobile Admin giờ tối thật thay vì trong suốt
   hoàn toàn (Tailwind không áp được opacity modifier lên `foreground.DEFAULT`
   vì đây là CSS custom property trần, không phải giá trị màu tĩnh).
-- **VNPay/Momo (`CheckoutForm.tsx`) - RÀ SOÁT LẠI, GIỮ NGUYÊN** (không phải
-  "màn hình giả" cần dọn) - radio đã `disabled` thật (không có state/onChange
-  giả), `cursor-not-allowed` + `opacity-60 grayscale` + badge "Sắp ra mắt" rõ
-  ràng, KHÔNG bọc trong `<label>` nên bấm vào chữ cũng không có hành vi gì -
-  khác hẳn 1 link/nút trông bấm được nhưng im lặng không làm gì (đúng tinh
-  thần nguyên tắc của task này, chỉ khác cách thể hiện "chưa hỗ trợ" so với
-  bỏ hẳn - cả 2 đều hợp lệ, giữ nguyên vì không gây hiểu lầm).
+- **VNPay/Momo (`CheckoutForm.tsx`) - RÀ SOÁT LẠI lúc task này, GIỮ NGUYÊN
+  decorative** (không phải "màn hình giả" cần dọn) - radio đã `disabled`
+  thật (không có state/onChange giả), `cursor-not-allowed` + `opacity-60
+  grayscale` + badge "Sắp ra mắt" rõ ràng, KHÔNG bọc trong `<label>` nên bấm
+  vào chữ cũng không có hành vi gì - khác hẳn 1 link/nút trông bấm được
+  nhưng im lặng không làm gì. **CẬP NHẬT ở task "Quyết định và hoàn thiện
+  thanh toán" (sau task này)**: VNPay đã chuyển từ decorative sang CHỨC NĂNG
+  THẬT - CHỈ riêng Momo còn giữ nguyên dạng disabled/"Sắp ra mắt" như mô tả
+  ở trên, xem đoạn riêng bên dưới.
+
+**Quyết định và hoàn thiện thanh toán** (task "Quyết định và hoàn thiện
+thanh toán") — quyết định đã xác nhận: triển khai VNPay sandbox THẬT (không
+chỉ COD), CHỈ VNPay (KHÔNG làm đồng thời Momo - "hoàn thiện 1 cổng tốt có
+giá trị hơn 2 cổng dở dang"). Thay 3 endpoint `501` cũ (task 8.1) bằng
+`app/services/payment_service.py`/`app/routers/payment.py` thật. Chi tiết
+thiết kế/lý do đầy đủ nằm trong docstring `payment_service.py` (rất dài, chỉ
+tóm tắt các điểm KHÔNG tự đọc code suy ra được ở đây):
+
+- **`POST /orders` (`order_service.checkout()`) GIỮ NGUYÊN HOÀN TOÀN** -
+  KHÔNG có field `payment_method`, luôn tạo `Order` + trừ tồn kho ngay lập
+  tức bất kể phương thức thanh toán (như trước giờ). VNPay là bước THỨ HAI,
+  xảy ra SAU khi `Order` đã tồn tại (`POST /payments/create` nhận
+  `order_id`) - khớp ĐÚNG quan hệ 1-1 `payments.order_id` đã thiết kế sẵn
+  trong DBML/model từ đầu dự án (KHÔNG cần migration mới). Quyết định CÓ CHỦ
+  ĐÍCH: dựng lại checkout thành "giữ chỗ trước, thanh toán rồi mới tạo đơn
+  thật" là thay đổi kiến trúc LỚN vào 1 luồng transaction đã ổn định/test kỹ
+  (`SELECT ... FOR UPDATE`, khóa chống deadlock) - không tương xứng phạm vi
+  "hoàn thiện thanh toán". Hệ quả chấp nhận: đơn "pending" vẫn giữ tồn kho
+  đã trừ dù Customer bỏ dở thanh toán VNPay - giống hệt rủi ro COD sẵn có,
+  Admin xử lý bằng `PUT /orders/{id}/cancel` có sẵn (tự hoàn kho).
+- **`PUT /orders/{id}/status` KHÔNG gate theo `Payment.status`** - Admin vẫn
+  tự do xác nhận/giao đơn dù VNPay CHƯA `success` (quyết định CÓ CHỦ ĐÍCH,
+  không phải thiếu sót) - kiểm tra đã thanh toán hay chưa là trách nhiệm
+  NGHIỆP VỤ của Admin (xem trạng thái ở chi tiết đơn), không tự động khóa
+  cứng `order_service.VALID_STATUS_TRANSITIONS` đã test kỹ - ngoài phạm vi
+  task này.
+- **Callback (`GET /payments/callback`) - xác minh chữ ký HMAC-SHA512 +
+  đối chiếu `vnp_Amount` với `Payment.amount` ĐÃ LƯU SẴN** (KHÔNG tin số
+  tiền/trạng thái do callback tự khai, kể cả sau khi chữ ký đúng - phòng thủ
+  2 lớp) - idempotent thật (`with_for_update()` + chỉ chuyển status khi đang
+  "pending", gọi lại nhiều lần cho CÙNG giao dịch không xử lý lại/không ghi
+  đè `transaction_id` lần 2). `vnp_TxnRef` = `Payment.id` (không sinh mã
+  riêng). Đây là target CỦA `vnp_ReturnUrl` (trình duyệt KHÁCH tự điều
+  hướng tới sau khi thanh toán ở VNPay) - response là REDIRECT (303) sang
+  Frontend `/checkout/payment-result?order_id=<id>&status=success|failed`
+  (hoặc `status=invalid` nếu không xác minh được), KHÔNG PHẢI JSON kiểu IPN
+  chuẩn VNPay - đơn giản hóa CÓ CHỦ ĐÍCH cho quy mô đồ án (`docs/API_SPEC.md`
+  mục 6 chỉ đặc tả ĐÚNG 1 endpoint callback, không tách riêng IPN server-to-
+  server - deploy thật sau này nên cấu hình thêm IPN URL riêng trên merchant
+  portal VNPay để có thêm 1 lớp xác nhận không phụ thuộc trình duyệt khách
+  quay lại, xem `docs/KNOWN_TODOS.md`).
+- **Retry thanh toán DÙNG LẠI ĐÚNG 1 dòng `Payment`** (KHÔNG tạo dòng mới -
+  `payments.order_id` UNIQUE thật theo DBML, không phải giới hạn tự đặt) -
+  "pending" cho tạo lại URL mới (link VNPay cũ có thể hết hạn ~15 phút),
+  "failed" reset về "pending" rồi tạo lại, "success"/"refunded" -> 409 (từ
+  chối). `OrderDetailView.tsx` có nút "Thanh toán lại qua VNPay" khi
+  `payment.status` đang "pending"/"failed" - gọi lại `POST /payments/create`
+  rồi điều hướng CỨNG (`window.location.href`, KHÔNG PHẢI `router.push` -
+  `payment_url` là domain NGOÀI app).
+- **`CheckoutForm.tsx`**: `paymentMethod` là state THUẦN FRONTEND (KHÔNG gửi
+  trong `POST /orders`). Chọn VNPay + submit: tạo `Order` trước (y hệt COD),
+  RỒI gọi `POST /payments/create`, RỒI điều hướng cứng sang `payment_url`.
+  Nếu bước tạo giao dịch VNPay THẤT BẠI (VD 503 chưa cấu hình
+  `VNPAY_TMN_CODE`/`VNPAY_HASH_SECRET`) - Đơn ĐÃ tạo thành công thật, KHÔNG
+  hiện "đặt hàng thất bại" (sai sự thật) - toast lỗi riêng rồi VẪN đưa khách
+  sang `/checkout/success` (fallback COD-style, khách thanh toán lại VNPay
+  sau từ chi tiết đơn) - đã tự verify thật qua browser (503 do chưa cấu hình
+  ở môi trường dev mặc định).
+- **`/checkout/payment-result`** (trang MỚI, đúng yêu cầu "trang kết quả
+  thanh toán") - `?order_id=`/`?status=` trên URL CHỈ dùng cho nhãn "lạc
+  quan" lúc đang fetch - LUÔN fetch LẠI `GET /payments/{orderId}/status`
+  (nguồn sự thật DUY NHẤT) trước khi hiện kết quả CUỐI CÙNG, KHÔNG tin thẳng
+  query param (cùng nguyên tắc `OrderConfirmation.tsx`).
+- **Đã tự verify THẬT end-to-end** (không chỉ qua pytest) bằng cách tạm thời
+  set `VNPAY_TMN_CODE`/`VNPAY_HASH_SECRET` giả trong `backend/.env` (XÓA
+  ngay sau khi xong, không phải giá trị sandbox thật) - xác nhận: URL
+  redirect ký đúng thật sự điều hướng được tới `sandbox.vnpayment.vn` (VNPay
+  từ chối vì mã merchant giả - đúng dự kiến, chứng minh cấu trúc request
+  đúng chuẩn); callback ký tay bằng Node.js (thuật toán HMAC-SHA512 độc lập)
+  verify khớp phía Backend Python - xác nhận encode `application/
+  x-www-form-urlencoded` (`quote_plus`, dấu cách -> "+") nhất quán 2 chiều;
+  retry dùng lại đúng 1 `Payment.id`; `OrderDetailView`/`PaymentResult` hiện
+  đúng dữ liệu thật cho cả 3 trạng thái (success/failed/pending sau retry).
+  **CHƯA verify được với credential sandbox VNPay THẬT** (cần bạn tự đăng ký
+  tại sandbox.vnpayment.vn) - đây là giới hạn đã biết trước, không phải bỏ
+  sót.
 
 `lib/axios.ts` (interceptor gắn JWT, CLIENT), `lib/api-server.ts` (fetch phía
 SERVER, task 4.2.1 — xem `API_INTERNAL_URL` bên dưới), `lib/auth.ts` (token
