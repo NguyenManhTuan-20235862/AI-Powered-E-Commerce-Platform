@@ -82,13 +82,22 @@
 
 ---
 
-## 6. Payment Module (`/payments`) — liên quan task 8.1
+## 6. Payment Module (`/payments`) — VNPay sandbox thật (task "Quyết định và
+hoàn thiện thanh toán", thay 3 endpoint `501` cũ task 8.1)
+
+**Quyết định phạm vi**: CHỈ VNPay (KHÔNG làm đồng thời Momo - "hoàn thiện 1
+cổng tốt có giá trị hơn 2 cổng dở dang", quyết định đã xác nhận). COD vẫn là
+lựa chọn MẶC ĐỊNH ở `CheckoutForm.tsx` (`POST /orders` không đổi, không có
+field `payment_method`) - VNPay là lựa chọn thanh toán online BỔ SUNG, tạo
+`Payment` SAU khi `Order` đã tồn tại (`payments.order_id` quan hệ 1-1, xem
+docs/DATABASE_SCHEMA.md). Chi tiết thiết kế đầy đủ: docstring
+`app/services/payment_service.py`.
 
 | Method | Path | Mô tả | Quyền truy cập | Role |
 |--------|------|-------|-----------------|------|
-| POST | `/payments/create` | Tạo giao dịch thanh toán (VNPay/Momo sandbox), trả về URL redirect | 🔒 Auth | Customer |
-| GET | `/payments/callback` | Nhận callback/IPN từ cổng thanh toán, cập nhật trạng thái Order | 🔓 Public (xác thực bằng chữ ký) | - |
-| GET | `/payments/{order_id}/status` | Kiểm tra trạng thái thanh toán của 1 đơn hàng | 🔒 Auth | Customer, Admin |
+| POST | `/payments/create` | Body: `order_id` (int). Tạo giao dịch VNPay cho 1 đơn ĐÃ TỒN TẠI (đúng chủ đơn), trả về `payment_url` redirect sang VNPay. 409 nếu đơn đã thanh toán/hoàn tiền, 503 nếu chưa cấu hình `VNPAY_TMN_CODE`/`VNPAY_HASH_SECRET` | 🔒 Auth | Customer (chủ đơn) |
+| GET | `/payments/callback` | Target của `vnp_ReturnUrl` (trình duyệt khách tự điều hướng tới sau khi thanh toán trên VNPay) - xác thực bằng chữ ký `vnp_SecureHash` (HMAC-SHA512), đối chiếu `vnp_Amount` với số tiền đã lưu sẵn lúc tạo giao dịch (KHÔNG tin số tiền/trạng thái callback tự khai), idempotent (gọi lại nhiều lần cho cùng giao dịch không xử lý lại). Response là REDIRECT (303) sang Frontend `/checkout/payment-result?order_id=<id>&status=success\|failed` (hoặc `status=invalid` nếu không xác minh được), KHÔNG PHẢI JSON | 🔓 Public (xác thực bằng chữ ký) | - |
+| GET | `/payments/{order_id}/status` | Kiểm tra trạng thái thanh toán của 1 đơn hàng - 404 nếu đơn chưa có giao dịch VNPay nào (VD đơn COD) | 🔒 Auth | Customer (chủ đơn), Admin |
 
 ---
 

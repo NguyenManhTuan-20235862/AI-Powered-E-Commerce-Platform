@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/hooks/useAuth";
@@ -13,25 +14,38 @@ import { formatPriceVnd, resolveProductImageUrlClient } from "@/lib/format";
 import { checkoutSchema, type CheckoutFormValues } from "@/lib/validations/checkout";
 import type { ApiResponse } from "@/types/common";
 import type { Order } from "@/types/order";
+import type { PaymentCreateResult } from "@/types/payment";
 
 type OrderApiResponse = ApiResponse<Order>;
+type PaymentApiResponse = ApiResponse<PaymentCreateResult>;
+
+type PaymentMethod = "cod" | "vnpay";
 
 /**
- * Client Component (task 4.3.2, Screen 2 Stitch "Thanh toán") - form giao
- * hàng (react-hook-form + zod, cùng pattern LoginForm/RegisterForm task
- * 1.3.4) + tóm tắt đơn hàng (đọc CartContext, KHÔNG tự fetch) + submit
- * `POST /orders`.
+ * Client Component (task 4.3.2, Screen 2 Stitch "Thanh toán"; VNPay thật ở
+ * task "Quyết định và hoàn thiện thanh toán") - form giao hàng
+ * (react-hook-form + zod, cùng pattern LoginForm/RegisterForm task 1.3.4) +
+ * tóm tắt đơn hàng (đọc CartContext, KHÔNG tự fetch) + submit `POST /orders`.
  *
- * KHÔNG có field payment_method - hệ thống hiện chỉ hỗ trợ COD (Payment
- * sandbox VNPay/Momo là task 8.1, chưa làm), `OrderCreate` (Backend) cũng
- * không có field này - COD ngầm định, radio VNPay/Momo chỉ hiển thị dạng
- * disabled/"Sắp ra mắt" đúng thiết kế Stitch, không có state/onChange thật.
+ * `paymentMethod` là state THUẦN FRONTEND (`useState`, KHÔNG gửi trong
+ * `POST /orders`) - `OrderCreate` (Backend) vẫn KHÔNG có field
+ * `payment_method` VÀ CỐ TÌNH không cần thêm: đặt hàng luôn tạo `Order`
+ * giống hệt nhau bất kể phương thức (COD ngầm định, xem
+ * `order_service.checkout()`) - "chọn VNPay" chỉ quyết định hành động NGAY
+ * SAU khi đơn đã tạo xong: gọi thêm `POST /payments/create` rồi điều hướng
+ * (redirect CỨNG, không phải `router.push`) sang `payment_url` VNPay trả về.
+ * COD giữ NGUYÊN hành vi cũ (điều hướng `/checkout/success`).
+ *
+ * Momo VẪN decorative/"Sắp ra mắt" (quyết định đã xác nhận: "không nên làm
+ * đồng thời VNPay và Momo - hoàn thiện 1 cổng tốt có giá trị hơn 2 cổng dở
+ * dang") - CHỈ VNPay chuyển từ decorative sang chức năng thật.
  */
 export function CheckoutForm() {
   const router = useRouter();
   const { user } = useAuth();
   const { items, totalCount, totalPrice, clearCart } = useCart();
   const [serverError, setServerError] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cod");
   const {
     register,
     handleSubmit,
@@ -62,17 +76,43 @@ export function CheckoutForm() {
         shipping_address: values.shipping_address,
         note: values.note || undefined,
       });
-      // Đơn hàng ĐÃ tạo thành công tại đây - điều hướng sang trang xác nhận
-      // NGAY, không đợi clearCart() xong. Backend đã xóa cart_items thật lúc
-      // checkout() - CartContext KHÔNG tự biết điều này (không có cơ chế nào
-      // re-fetch sau 1 request không liên quan tới /cart) nên vẫn cần gọi
+      const orderId = data.data.id;
+      // Đơn hàng ĐÃ tạo thành công tại đây - Backend đã xóa cart_items thật
+      // lúc checkout() - CartContext KHÔNG tự biết điều này nên vẫn cần gọi
       // clearCart() để đồng bộ lại badge Header/state cục bộ, NHƯNG tách
-      // riêng try/catch: nếu chính request DELETE /cart bị lỗi mạng thoáng
-      // qua, KHÔNG được hiện lại "đặt hàng thất bại" (đơn đã tạo xong thật -
-      // lỗi dọn dẹp cache cục bộ không phải lỗi đặt hàng, badge Header sẽ tự
-      // đúng lại ở lần fetch giỏ hàng kế tiếp).
-      router.push(`/checkout/success?order_id=${data.data.id}`);
+      // riêng try/catch (không await chặn luồng bên dưới): nếu chính request
+      // DELETE /cart bị lỗi mạng thoáng qua, KHÔNG được hiện lại "đặt hàng
+      // thất bại" (đơn đã tạo xong thật - lỗi dọn dẹp cache cục bộ không
+      // phải lỗi đặt hàng, badge Header sẽ tự đúng lại ở lần fetch giỏ hàng
+      // kế tiếp).
       clearCart().catch(() => {});
+
+      if (paymentMethod === "vnpay") {
+        try {
+          const payment = await api.post<PaymentApiResponse>("/payments/create", { order_id: orderId });
+          // Điều hướng CỨNG (window.location.href, KHÔNG PHẢI router.push) -
+          // payment_url là trang NGOÀI app (VNPay), router Next.js (điều
+          // hướng nội bộ app) không xử lý được URL ngoài domain.
+          window.location.href = payment.data.data.payment_url;
+          return;
+        } catch (paymentErr) {
+          // Đơn ĐÃ tạo thành công (chỉ bước tạo giao dịch VNPay thất bại, VD
+          // chưa cấu hình sandbox/503) - KHÔNG hiện "đặt hàng thất bại" (sai
+          // sự thật, đơn đã tồn tại thật) - báo lỗi RIÊNG bằng toast rồi vẫn
+          // đưa khách sang trang xác nhận đơn (COD-style fallback) - khách
+          // xem được đơn ngay, thử thanh toán VNPay lại sau từ chi tiết đơn
+          // (`OrderDetailView.tsx` có nút "Thanh toán lại" khi Payment đang
+          // "pending"/"failed").
+          toast.error(
+            extractApiErrorMessage(
+              paymentErr,
+              "Không thể khởi tạo thanh toán VNPay. Đơn hàng vẫn được ghi nhận, bạn có thể thanh toán lại sau.",
+            ),
+          );
+        }
+      }
+
+      router.push(`/checkout/success?order_id=${orderId}`);
     } catch (err) {
       // 409 (thiếu tồn kho, xem order_service.checkout()) và mọi lỗi khác
       // đều hiện message THẬT từ Backend (danh sách sản phẩm thiếu cụ thể),
@@ -147,22 +187,44 @@ export function CheckoutForm() {
         <section className="rounded-xl bg-surface p-6 shadow-warm">
           <h2 className="mb-4 font-heading text-lg text-primary">Phương thức thanh toán</h2>
           <div className="flex flex-col gap-3">
-            <label className="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-primary bg-primary-100 p-4">
-              <input type="radio" name="payment" checked readOnly className="h-5 w-5 text-primary" />
+            <label
+              className={`flex cursor-pointer items-center gap-3 rounded-lg border-2 p-4 ${
+                paymentMethod === "cod" ? "border-primary bg-primary-100" : "border-border"
+              }`}
+            >
+              <input
+                type="radio"
+                name="payment"
+                checked={paymentMethod === "cod"}
+                onChange={() => setPaymentMethod("cod")}
+                className="h-5 w-5 text-primary"
+              />
               <span className="font-semibold text-foreground">Thanh toán khi nhận hàng (COD)</span>
             </label>
-            {["Thanh toán qua VNPay", "Thanh toán qua Ví Momo"].map((label) => (
-              <div
-                key={label}
-                className="flex cursor-not-allowed items-center justify-between rounded-lg border border-border p-4 opacity-60 grayscale"
-              >
-                <div className="flex items-center gap-3">
-                  <input type="radio" disabled className="h-5 w-5" />
-                  <span className="text-foreground-secondary">{label}</span>
-                </div>
-                <span className="rounded bg-background px-2 py-1 text-xs text-foreground-muted">Sắp ra mắt</span>
+            <label
+              className={`flex cursor-pointer items-center gap-3 rounded-lg border-2 p-4 ${
+                paymentMethod === "vnpay" ? "border-primary bg-primary-100" : "border-border"
+              }`}
+            >
+              <input
+                type="radio"
+                name="payment"
+                checked={paymentMethod === "vnpay"}
+                onChange={() => setPaymentMethod("vnpay")}
+                className="h-5 w-5 text-primary"
+              />
+              <span className="font-semibold text-foreground">Thanh toán qua VNPay</span>
+            </label>
+            {/* Momo VẪN decorative/"Sắp ra mắt" (quyết định đã xác nhận: không
+                làm đồng thời VNPay và Momo) - CHỈ VNPay ở trên chuyển sang
+                chức năng thật, radio này giữ nguyên disabled như cũ. */}
+            <div className="flex cursor-not-allowed items-center justify-between rounded-lg border border-border p-4 opacity-60 grayscale">
+              <div className="flex items-center gap-3">
+                <input type="radio" disabled className="h-5 w-5" />
+                <span className="text-foreground-secondary">Thanh toán qua Ví Momo</span>
               </div>
-            ))}
+              <span className="rounded bg-background px-2 py-1 text-xs text-foreground-muted">Sắp ra mắt</span>
+            </div>
           </div>
         </section>
       </div>
@@ -219,7 +281,7 @@ export function CheckoutForm() {
             disabled={isSubmitting}
             className="mt-1 flex w-full items-center justify-center rounded-2xl bg-primary py-4 font-heading text-base text-background transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isSubmitting ? "Đang đặt hàng..." : "Đặt hàng"}
+            {isSubmitting ? "Đang xử lý..." : paymentMethod === "vnpay" ? "Đặt hàng & Thanh toán VNPay" : "Đặt hàng"}
           </button>
         </div>
       </div>

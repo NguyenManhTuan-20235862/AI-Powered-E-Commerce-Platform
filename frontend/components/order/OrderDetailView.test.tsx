@@ -9,12 +9,22 @@ import type { Order } from "@/types/order";
 
 const mockGet = vi.fn();
 const mockPut = vi.fn();
+const mockPost = vi.fn();
 const replaceMock = vi.fn();
+const mockToastError = vi.fn();
 
 vi.mock("@/lib/axios", () => ({
   api: {
     get: (...args: unknown[]) => mockGet(...args),
     put: (...args: unknown[]) => mockPut(...args),
+    post: (...args: unknown[]) => mockPost(...args),
+  },
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    error: (...args: unknown[]) => mockToastError(...args),
+    success: vi.fn(),
   },
 }));
 
@@ -73,6 +83,71 @@ function networkError() {
   return new AxiosError("Network Error", "ERR_NETWORK");
 }
 
+type MockOutcome = { ok: true; data: unknown } | { ok: false; error: unknown };
+
+/**
+ * `mockGet` giờ dùng chung cho CẢ `GET /orders/{id}` LẪN `GET
+ * /payments/{id}/status` (task "Quyết định và hoàn thiện thanh toán" - thêm
+ * khối "Thanh toán") - dispatch theo URL thay vì trả `mockResolvedValue`
+ * chung chung cho MỌI lời gọi (sẽ khiến lời gọi payment "vô tình" nhận nhầm
+ * dữ liệu đơn hàng). Mặc định `/payments/{id}/status` trả 404 (đơn COD,
+ * KHÔNG có giao dịch VNPay nào - đúng hành vi thật đa số test ở đây đang mô
+ * phỏng) trừ khi 1 test cụ thể gọi `mockPaymentResponse()` để đổi.
+ *
+ * `orderOutcomes` (mảng) - PHÁT theo ĐÚNG THỨ TỰ cho MỖI lời gọi `/orders/{id}`
+ * kế tiếp (phần tử CUỐI lặp lại vô hạn nếu gọi nhiều hơn số phần tử đã khai)
+ * - tách biệt hẳn khỏi số lần gọi `/payments/.../status` (không còn lẫn lộn
+ * như đếm chung `mockGet.mock.calls.length` trước đây).
+ */
+function mockOrderOutcomes(orderId: number, ...orderOutcomes: MockOutcome[]) {
+  let call = 0;
+  mockGet.mockImplementation((url: string) => {
+    if (url === `/payments/${orderId}/status`) {
+      return Promise.reject(httpError(404, "Đơn hàng này chưa có giao dịch thanh toán online"));
+    }
+    const outcome = orderOutcomes[Math.min(call, orderOutcomes.length - 1)];
+    call += 1;
+    return outcome.ok ? Promise.resolve(outcome.data) : Promise.reject(outcome.error);
+  });
+}
+
+/** Cùng `mockOrderOutcomes()` nhưng `/payments/{orderId}/status` trả về
+ * `paymentData` THẬT (thay vì mặc định 404 "chưa có giao dịch") - dùng cho
+ * test khối "Thanh toán". */
+function mockOrderOutcomesWithPayment(orderId: number, paymentData: unknown, ...orderOutcomes: MockOutcome[]) {
+  let call = 0;
+  mockGet.mockImplementation((url: string) => {
+    if (url === `/payments/${orderId}/status`) {
+      return Promise.resolve(paymentData);
+    }
+    const outcome = orderOutcomes[Math.min(call, orderOutcomes.length - 1)];
+    call += 1;
+    return outcome.ok ? Promise.resolve(outcome.data) : Promise.reject(outcome.error);
+  });
+}
+
+function countCallsTo(url: string): number {
+  return mockGet.mock.calls.filter((call) => call[0] === url).length;
+}
+
+function paymentResponse(status: "pending" | "success" | "failed" | "refunded", orderId = 10) {
+  return {
+    data: {
+      success: true,
+      message: "",
+      data: {
+        order_id: orderId,
+        payment_method: "vnpay",
+        transaction_id: status === "success" ? "14000123" : null,
+        amount: "300000",
+        status,
+        created_at: "2026-08-01T00:00:00",
+        updated_at: "2026-08-01T00:00:00",
+      },
+    },
+  };
+}
+
 describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
   beforeEach(() => {
     vi.spyOn(window, "confirm");
@@ -83,6 +158,8 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
     vi.restoreAllMocks();
     mockGet.mockReset();
     mockPut.mockReset();
+    mockPost.mockReset();
+    mockToastError.mockReset();
     replaceMock.mockReset();
     retryStreamMock.mockReset();
   });
@@ -94,7 +171,7 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
   });
 
   it("fetch thành công - hiện đủ trạng thái, snapshot sản phẩm, tổng tiền, người nhận, ghi chú, thời gian", async () => {
-    mockGet.mockResolvedValue(okResponse(baseOrder));
+    mockOrderOutcomes(10, { ok: true, data: okResponse(baseOrder) });
     render(<OrderDetailView orderId={10} />);
 
     expect(await screen.findByText("Đơn hàng #10")).toBeInTheDocument();
@@ -121,7 +198,7 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
   // đúng hành vi thật nữa.
 
   it("403 - hiện thông báo không có quyền + link quay lại, KHÔNG điều hướng /login", async () => {
-    mockGet.mockRejectedValue(httpError(403));
+    mockOrderOutcomes(10, { ok: false, error: httpError(403) });
     render(<OrderDetailView orderId={10} />);
 
     expect(await screen.findByText("Bạn không có quyền xem đơn hàng này.")).toBeInTheDocument();
@@ -129,7 +206,7 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
   });
 
   it("404 - hiện thông báo không tìm thấy đơn hàng", async () => {
-    mockGet.mockRejectedValue(httpError(404));
+    mockOrderOutcomes(999, { ok: false, error: httpError(404) });
     render(<OrderDetailView orderId={999} />);
 
     expect(await screen.findByText("Không tìm thấy đơn hàng này.")).toBeInTheDocument();
@@ -137,8 +214,7 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
 
   it("lỗi mạng - hiện thông báo + nút Thử lại, bấm Thử lại gọi lại API", async () => {
     const user = userEvent.setup();
-    mockGet.mockRejectedValueOnce(networkError());
-    mockGet.mockResolvedValueOnce(okResponse(baseOrder));
+    mockOrderOutcomes(10, { ok: false, error: networkError() }, { ok: true, data: okResponse(baseOrder) });
 
     render(<OrderDetailView orderId={10} />);
 
@@ -146,11 +222,11 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
     await user.click(screen.getByRole("button", { name: "Thử lại" }));
 
     expect(await screen.findByText("Đơn hàng #10")).toBeInTheDocument();
-    expect(mockGet).toHaveBeenCalledTimes(2);
+    expect(countCallsTo("/orders/10")).toBe(2);
   });
 
   it("lỗi 500 - hiện message thật từ Backend + nút Thử lại", async () => {
-    mockGet.mockRejectedValue(httpError(500, "Lỗi hệ thống, vui lòng thử lại sau"));
+    mockOrderOutcomes(10, { ok: false, error: httpError(500, "Lỗi hệ thống, vui lòng thử lại sau") });
     render(<OrderDetailView orderId={10} />);
 
     expect(await screen.findByText("Lỗi hệ thống, vui lòng thử lại sau")).toBeInTheDocument();
@@ -160,7 +236,7 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
   it("status=pending - hiện nút Hủy đơn hàng; xác nhận confirm() -> PUT /orders/{id}/cancel, cập nhật lại trạng thái hiển thị", async () => {
     const user = userEvent.setup();
     vi.mocked(window.confirm).mockReturnValue(true);
-    mockGet.mockResolvedValue(okResponse(baseOrder));
+    mockOrderOutcomes(10, { ok: true, data: okResponse(baseOrder) });
     mockPut.mockResolvedValue(okResponse({ ...baseOrder, status: "cancelled" }));
 
     render(<OrderDetailView orderId={10} />);
@@ -174,7 +250,7 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
   });
 
   it("status != pending - KHÔNG hiện nút Hủy đơn hàng", async () => {
-    mockGet.mockResolvedValue(okResponse({ ...baseOrder, status: "confirmed" }));
+    mockOrderOutcomes(10, { ok: true, data: okResponse({ ...baseOrder, status: "confirmed" }) });
     render(<OrderDetailView orderId={10} />);
 
     await screen.findByText("Đơn hàng #10");
@@ -182,21 +258,24 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
   });
 
   it("nhận event SSE order_status ĐÚNG order_id đang xem -> tự fetch lại đơn", async () => {
-    mockGet.mockResolvedValueOnce(okResponse(baseOrder));
+    mockOrderOutcomes(
+      10,
+      { ok: true, data: okResponse(baseOrder) },
+      { ok: true, data: okResponse({ ...baseOrder, status: "confirmed" }) },
+    );
     render(<OrderDetailView orderId={10} />);
     await screen.findByText("Đơn hàng #10");
 
-    mockGet.mockResolvedValueOnce(okResponse({ ...baseOrder, status: "confirmed" }));
     act(() => {
       capturedOnOrderStatus?.({ order_id: 10, status: "confirmed", timestamp: "2026-08-02T00:00:00Z" });
     });
 
-    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(countCallsTo("/orders/10")).toBe(2));
     expect(await screen.findByText("Đã xác nhận")).toBeInTheDocument();
   });
 
   it("nhận event SSE order_status của đơn KHÁC -> KHÔNG fetch lại", async () => {
-    mockGet.mockResolvedValue(okResponse(baseOrder));
+    mockOrderOutcomes(10, { ok: true, data: okResponse(baseOrder) });
     render(<OrderDetailView orderId={10} />);
     await screen.findByText("Đơn hàng #10");
 
@@ -205,6 +284,67 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(mockGet).toHaveBeenCalledTimes(1);
+    expect(countCallsTo("/orders/10")).toBe(1);
+  });
+
+  describe("Khối 'Thanh toán' (task \"Quyết định và hoàn thiện thanh toán\")", () => {
+    it("đơn COD (chưa từng khởi tạo VNPay, 404) - KHÔNG hiện khối Thanh toán", async () => {
+      mockOrderOutcomes(10, { ok: true, data: okResponse(baseOrder) });
+      render(<OrderDetailView orderId={10} />);
+
+      await screen.findByText("Đơn hàng #10");
+      expect(screen.queryByText("Thanh toán")).not.toBeInTheDocument();
+    });
+
+    it("payment status=success - hiện 'Đã thanh toán', KHÔNG có nút thanh toán lại", async () => {
+      mockOrderOutcomesWithPayment(10, paymentResponse("success"), { ok: true, data: okResponse(baseOrder) });
+      render(<OrderDetailView orderId={10} />);
+
+      await screen.findByText("Đơn hàng #10");
+      expect(await screen.findByText("Đã thanh toán")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Thanh toán lại qua VNPay" })).not.toBeInTheDocument();
+    });
+
+    it("payment status=failed - hiện 'Thanh toán thất bại' + nút thanh toán lại; bấm gọi đúng POST /payments/create, điều hướng cứng", async () => {
+      const user = userEvent.setup();
+      const originalLocation = window.location;
+      // @ts-expect-error - test-only: jsdom location là accessor, phải xóa trước khi gán lại.
+      delete window.location;
+      // @ts-expect-error - test-only stub, chỉ cần field href.
+      window.location = { href: "" };
+
+      mockOrderOutcomesWithPayment(10, paymentResponse("failed"), { ok: true, data: okResponse(baseOrder) });
+      mockPost.mockResolvedValue({
+        data: { success: true, message: "", data: { payment_id: 1, order_id: 10, payment_url: "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?vnp_TxnRef=1" } },
+      });
+
+      render(<OrderDetailView orderId={10} />);
+      await screen.findByText("Đơn hàng #10");
+
+      expect(await screen.findByText("Thanh toán thất bại")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Thanh toán lại qua VNPay" }));
+
+      await waitFor(() => expect(mockPost).toHaveBeenCalledWith("/payments/create", { order_id: 10 }));
+      expect(window.location.href).toBe("https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?vnp_TxnRef=1");
+
+      window.location = originalLocation;
+    });
+
+    it("thanh toán lại thất bại (VD 409 đã thanh toán ở tab khác) - hiện toast lỗi, KHÔNG điều hướng đi đâu", async () => {
+      const user = userEvent.setup();
+      mockOrderOutcomesWithPayment(10, paymentResponse("pending"), { ok: true, data: okResponse(baseOrder) });
+      mockPost.mockRejectedValue(
+        new AxiosError("Request failed with status code 409", "ERR_BAD_REQUEST", undefined, undefined, {
+          status: 409,
+          data: { success: false, message: "Đơn hàng đã ở trạng thái thanh toán \"success\"" },
+        } as never),
+      );
+
+      render(<OrderDetailView orderId={10} />);
+      await screen.findByText("Đơn hàng #10");
+      await user.click(await screen.findByRole("button", { name: "Thanh toán lại qua VNPay" }));
+
+      await waitFor(() => expect(mockToastError).toHaveBeenCalledWith('Đơn hàng đã ở trạng thái thanh toán "success"'));
+    });
   });
 });

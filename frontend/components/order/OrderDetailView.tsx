@@ -13,6 +13,14 @@ import { formatPriceVnd } from "@/lib/format";
 import type { ApiResponse } from "@/types/common";
 import type { OrderStatusEvent } from "@/types/notification";
 import type { Order } from "@/types/order";
+import type { Payment, PaymentCreateResult } from "@/types/payment";
+
+const PAYMENT_STATUS_LABEL: Record<Payment["status"], string> = {
+  pending: "Đang chờ thanh toán",
+  success: "Đã thanh toán",
+  failed: "Thanh toán thất bại",
+  refunded: "Đã hoàn tiền",
+};
 
 type LoadState = "loading" | "ready" | "forbidden" | "not-found" | "network-error" | "error";
 
@@ -56,12 +64,22 @@ const STREAM_BANNER_LABEL: Record<string, string | null> = {
  *   cứng nên chủ yếu là id không có thật).
  * - Lỗi mạng/5xx khác: có nút "Thử lại" (gọi lại fetchOrder(), KHÔNG có ý
  *   nghĩa cho 403/404 - lỗi đó KHÔNG tự hết khi gọi lại).
+ *
+ * **Khối "Thanh toán"** (task "Quyết định và hoàn thiện thanh toán") - fetch
+ * RIÊNG `GET /payments/{orderId}/status`, best-effort (404 = đơn COD, chưa
+ * từng khởi tạo thanh toán online - KHÔNG hiện khối này, không phải lỗi).
+ * Có nút "Thanh toán lại qua VNPay" khi `payment.status` đang "pending"/
+ * "failed" (Backend cho retry dùng LẠI đúng 1 dòng Payment, xem
+ * `payment_service.py`) - gọi lại `POST /payments/create` rồi điều hướng
+ * CỨNG (`window.location.href`) sang `payment_url` VNPay trả về.
  */
 export function OrderDetailView({ orderId }: { orderId: number }) {
   const [order, setOrder] = useState<Order | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [payment, setPayment] = useState<Payment | null>(null);
+  const [isPayingNow, setIsPayingNow] = useState(false);
 
   const fetchOrder = useCallback(async () => {
     setLoadState("loading");
@@ -94,6 +112,37 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
   useEffect(() => {
     fetchOrder();
   }, [fetchOrder]);
+
+  // Trạng thái thanh toán VNPay (task "Quyết định và hoàn thiện thanh toán")
+  // - fetch RIÊNG, best-effort, KHÔNG ảnh hưởng `loadState` chính của đơn
+  // hàng (404 ở đây nghĩa là "đơn COD, chưa từng khởi tạo thanh toán online"
+  // - hoàn toàn BÌNH THƯỜNG, không phải lỗi cần hiện gì cho Customer, chỉ
+  // đơn giản là KHÔNG hiện khối "Thanh toán" bên dưới).
+  useEffect(() => {
+    let active = true;
+    api
+      .get<ApiResponse<Payment>>(`/payments/${orderId}/status`)
+      .then(({ data }) => {
+        if (active) setPayment(data.data);
+      })
+      .catch(() => {
+        if (active) setPayment(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [orderId]);
+
+  async function handlePayNow() {
+    setIsPayingNow(true);
+    try {
+      const { data } = await api.post<ApiResponse<PaymentCreateResult>>("/payments/create", { order_id: orderId });
+      window.location.href = data.data.payment_url;
+    } catch (err) {
+      toast.error(extractApiErrorMessage(err, "Không thể khởi tạo thanh toán VNPay. Vui lòng thử lại."));
+      setIsPayingNow(false);
+    }
+  }
 
   async function handleCancel() {
     if (!order) return;
@@ -224,6 +273,43 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
             <span className="font-heading text-xl text-primary">{formatPriceVnd(order.total_amount)}</span>
           </div>
         </div>
+
+        {/* Chỉ hiện khi đơn CÓ giao dịch VNPay (`payment !== null`) - đơn COD
+            (chưa từng khởi tạo thanh toán online) KHÔNG hiện khối này, cùng
+            nguyên tắc "không bịa dữ liệu không có thật" xuyên suốt dự án. */}
+        {payment && (
+          <div className="border-t border-border pt-4">
+            <h2 className="mb-3 font-heading text-lg text-primary">Thanh toán</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-background p-4 text-sm">
+              <div className="flex flex-col gap-1">
+                <span className="text-foreground-muted">
+                  Phương thức: <span className="font-semibold uppercase text-foreground">{payment.payment_method}</span>
+                </span>
+                <span
+                  className={`font-semibold ${
+                    payment.status === "success"
+                      ? "text-secondary"
+                      : payment.status === "failed"
+                        ? "text-error"
+                        : "text-foreground-secondary"
+                  }`}
+                >
+                  {PAYMENT_STATUS_LABEL[payment.status]}
+                </span>
+              </div>
+              {(payment.status === "pending" || payment.status === "failed") && (
+                <button
+                  type="button"
+                  onClick={handlePayNow}
+                  disabled={isPayingNow}
+                  className="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-background transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isPayingNow ? "Đang chuyển hướng..." : "Thanh toán lại qua VNPay"}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="border-t border-border pt-4">
           <h2 className="mb-3 font-heading text-lg text-primary">Thông tin giao hàng</h2>

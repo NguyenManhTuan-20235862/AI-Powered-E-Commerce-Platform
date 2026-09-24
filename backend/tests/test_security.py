@@ -1,8 +1,14 @@
 """Test cho get_current_user (JWT thật) và require_role (task 1.3.3).
 
-Không có endpoint nào trả 200 thật (toàn bộ router vẫn là placeholder 501 - xem
-docs/API_SPEC.md), nên "đúng role" được xác nhận bằng việc request VƯỢT QUA
-được lớp auth/role và chạm tới 501 (thay vì bị chặn ở 401/403).
+Lúc viết file này (task 1.3.3), chưa endpoint nào trả 200 thật (toàn bộ
+router vẫn placeholder 501) nên "đúng role" được xác nhận bằng việc request
+VƯỢT QUA được lớp auth/role và chạm tới 501 thay vì bị chặn ở 401/403 - hầu
+hết router đã implement thật từ lâu (chỉ còn vài endpoint AI Agent task 6.x
+là 501), các test dưới đây CHỦ ĐÍCH vẫn kiểm tra ĐÚNG lớp auth/role (không
+quan tâm response THÀNH CÔNG cụ thể ra sao), chỉ riêng
+`test_valid_token_passes_auth_reaches_real_logic` từng dựa vào 1 endpoint đã
+là placeholder, nay endpoint đó đã real nên đổi kỳ vọng sang mã lỗi nghiệp vụ
+thật (404) thay vì 501.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -69,17 +75,20 @@ def test_locked_account_returns_401(client: TestClient, db: Session) -> None:
     assert response.status_code == 401
 
 
-def test_valid_token_passes_auth_reaches_placeholder(client: TestClient, db: Session) -> None:
+def test_valid_token_passes_auth_reaches_real_logic(client: TestClient, db: Session) -> None:
     """Token hợp lệ, endpoint không giới hạn role cụ thể (Customer, Admin đều được).
 
-    Dùng /payments/{order_id}/status (vẫn placeholder 501) thay vì /users/me -
-    /users/me đã implement thật ở task 1.4.1 (xem test_get_my_profile_returns_real_user
-    trong test_user.py), không còn phù hợp để test "vượt qua auth, chạm placeholder".
+    Dùng /payments/{order_id}/status - vẫn dùng LẠI đúng endpoint này (không
+    yêu cầu role cụ thể, `Depends(get_current_user)` thuần, xem
+    app/routers/payment.py) nhưng KHÔNG còn là placeholder `501` (implement
+    thật ở task "Quyết định và hoàn thiện thanh toán", xem test_payment.py) -
+    order_id không tồn tại (999999) giờ trả `404` THẬT (đã vượt qua auth,
+    chạm tới logic thật kiểm tra đơn hàng có tồn tại hay không) thay vì `501`.
     """
     user = _create_user(db, role=UserRole.customer)
     token = create_access_token(user_id=user.id, role=user.role.value)
-    response = client.get("/api/v1/payments/1/status", headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 501
+    response = client.get("/api/v1/payments/999999/status", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 404
 
 
 def test_customer_token_on_admin_only_endpoint_returns_403(client: TestClient, db: Session) -> None:

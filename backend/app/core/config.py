@@ -64,6 +64,27 @@ class Settings(BaseSettings):
     # chạy gần (VD "*/2 * * * *" - mỗi 2 phút) mà KHÔNG cần sửa code.
     PRODUCT_SYNC_CRON: str = "0 2 * * *"
 
+    # Payment - VNPay sandbox thật (task "Quyết định và hoàn thiện thanh
+    # toán") - KHÔNG có giá trị mặc định hợp lệ cho TMN_CODE/HASH_SECRET (rỗng
+    # = chưa cấu hình, `payment_service.build_payment_url()` tự raise lỗi rõ
+    # ràng thay vì ký request với secret rỗng/sai). Đăng ký tài khoản sandbox
+    # tại https://sandbox.vnpayment.vn để lấy 2 giá trị này.
+    VNPAY_TMN_CODE: str = ""
+    VNPAY_HASH_SECRET: str = ""
+    # URL cổng thanh toán sandbox VNPay (v2.1.0) - CÓ THỂ giữ nguyên, đổi khi
+    # VNPay cập nhật version API hoặc chuyển sang endpoint production thật.
+    VNPAY_PAY_URL: str = "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html"
+    # URL BACKEND đầy đủ (KHÔNG PHẢI tên service Docker - đây là `vnp_ReturnUrl`
+    # gửi cho VNPay, trình duyệt CỦA KHÁCH sẽ điều hướng thẳng tới URL này sau
+    # khi thanh toán xong, cùng nguyên tắc NEXT_PUBLIC_API_URL - phải là URL
+    # trình duyệt gọi được) - trỏ đúng `GET /payments/callback`.
+    VNPAY_RETURN_URL: str = "http://localhost:8000/api/v1/payments/callback"
+    # URL gốc FRONTEND (KHÁC mọi biến URL khác trong file này - đây là nơi DUY
+    # NHẤT Backend cần biết địa chỉ Frontend) - dùng để Backend tự điều hướng
+    # trình duyệt khách VỀ LẠI trang kết quả thanh toán
+    # (`/checkout/payment-result`) sau khi xử lý xong `GET /payments/callback`.
+    FRONTEND_BASE_URL: str = "http://localhost:3000"
+
     @property
     def is_production(self) -> bool:
         """True khi APP_ENV=production - dùng để ẩn Swagger/ReDoc docs."""
