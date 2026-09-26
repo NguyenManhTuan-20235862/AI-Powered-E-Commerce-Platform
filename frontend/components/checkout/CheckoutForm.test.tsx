@@ -7,10 +7,11 @@ import { CheckoutForm } from "@/components/checkout/CheckoutForm";
 import { CartProvider } from "@/context/CartContext";
 import type { Cart } from "@/types/cart";
 
-// CheckoutForm phụ thuộc CartContext (tóm tắt đơn hàng + clearCart sau khi
-// đặt thành công) VÀ useAuth() (pre-fill form) - mock cả 2 để test độc lập,
-// không cần Backend thật. `mockDelete`/`mockGet`/`mockPost` dùng CHUNG 1 mock
-// `@/lib/axios` (CartProvider và CheckoutForm cùng import module này).
+// CheckoutForm phụ thuộc CartContext (tóm tắt đơn hàng + refreshCart sau khi
+// đặt thành công - GET /cart để đồng bộ badge, KHÔNG DELETE) VÀ useAuth()
+// (pre-fill form) - mock cả 2 để test độc lập, không cần Backend thật.
+// `mockGet`/`mockPost` dùng CHUNG 1 mock `@/lib/axios` (CartProvider và
+// CheckoutForm cùng import module này).
 const pushMock = vi.fn();
 const replaceMock = vi.fn();
 const mockGet = vi.fn();
@@ -127,28 +128,9 @@ describe("CheckoutForm (task 4.3.2)", () => {
     expect(screen.getByLabelText("Địa chỉ giao hàng")).toHaveValue("123 Đường ABC");
   });
 
-  it("submit thành công - gọi POST /orders, clear giỏ hàng, redirect sang trang xác nhận kèm order_id", async () => {
+  it("submit thành công - gọi POST /orders, đồng bộ giỏ bằng GET /cart (KHÔNG DELETE), redirect kèm order_id", async () => {
     const user = userEvent.setup();
-    mockPost.mockResolvedValue({
-      data: {
-        success: true,
-        message: "Đặt hàng thành công",
-        data: {
-          id: 42,
-          user_id: 1,
-          status: "pending",
-          total_amount: "300000",
-          shipping_name: "Nguyễn Văn A",
-          shipping_address: "123 Đường ABC",
-          shipping_phone: "0912345678",
-          note: null,
-          items: [],
-          created_at: "2026-08-09T00:00:00",
-          updated_at: "2026-08-09T00:00:00",
-        },
-      },
-    });
-    mockDelete.mockResolvedValue({ data: { success: true, message: "Đã xóa toàn bộ giỏ hàng" } });
+    mockPost.mockResolvedValue(orderResponse());
 
     renderCheckoutForm();
     await waitFor(() => expect(screen.getByLabelText("Họ và tên")).toHaveValue("Nguyễn Văn A"));
@@ -163,7 +145,11 @@ describe("CheckoutForm (task 4.3.2)", () => {
         note: undefined,
       }),
     );
-    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith("/cart"));
+    // Sau checkout: refreshCart() gọi GET /cart LẦN NỮA (đồng bộ badge) - GET
+    // /cart phải được gọi ≥ 2 lần (mount + refresh). TUYỆT ĐỐI KHÔNG DELETE
+    // /cart (Backend đã xóa trong transaction; DELETE thừa + có race xóa nhầm).
+    await waitFor(() => expect(mockGet.mock.calls.filter((c) => c[0] === "/cart").length).toBeGreaterThanOrEqual(2));
+    expect(mockDelete).not.toHaveBeenCalled();
     expect(pushMock).toHaveBeenCalledWith("/checkout/success?order_id=42");
   });
 
@@ -222,7 +208,6 @@ describe("CheckoutForm (task 4.3.2)", () => {
         }
         throw new Error(`unexpected POST url: ${url}`);
       });
-      mockDelete.mockResolvedValue({ data: { success: true, message: "" } });
 
       renderCheckoutForm();
       await waitFor(() => expect(screen.getByLabelText("Họ và tên")).toHaveValue("Nguyễn Văn A"));
@@ -253,7 +238,6 @@ describe("CheckoutForm (task 4.3.2)", () => {
         }
         throw new Error(`unexpected POST url: ${url}`);
       });
-      mockDelete.mockResolvedValue({ data: { success: true, message: "" } });
 
       renderCheckoutForm();
       await waitFor(() => expect(screen.getByLabelText("Họ và tên")).toHaveValue("Nguyễn Văn A"));

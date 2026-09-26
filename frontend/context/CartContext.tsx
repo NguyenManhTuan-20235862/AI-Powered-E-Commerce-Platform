@@ -24,7 +24,11 @@ interface CartContextValue {
   addItem: (productId: number, quantity?: number) => Promise<void>;
   updateQuantity: (itemId: number, quantity: number) => Promise<void>;
   removeItem: (itemId: number) => Promise<void>;
-  clearCart: () => Promise<void>;
+  // Fetch LẠI giỏ hàng từ Backend (GET /cart) để đồng bộ state cục bộ/badge.
+  // Dùng SAU checkout: `POST /orders` đã xóa cart_items ngay trong transaction
+  // nên KHÔNG cần (và KHÔNG được) gửi thêm DELETE /cart - GET là thao tác chỉ
+  // đọc, không thể xóa nhầm món khách vừa thêm ở tab khác (xem CheckoutForm).
+  refreshCart: () => Promise<void>;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -85,11 +89,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setCart(data.data);
   }, []);
 
-  const clearCart = useCallback(async () => {
-    await api.delete("/cart");
-    setCart(EMPTY_CART);
-  }, []);
-
   const totalCount = useMemo(() => cart.items.reduce((sum, item) => sum + item.quantity, 0), [cart.items]);
 
   const value: CartContextValue = {
@@ -101,7 +100,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     addItem,
     updateQuantity,
     removeItem,
-    clearCart,
+    refreshCart: fetchCart,
   };
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

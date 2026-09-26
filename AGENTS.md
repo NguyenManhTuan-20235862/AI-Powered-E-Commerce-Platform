@@ -569,8 +569,14 @@ pre-fill từ `useAuth().user` qua `reset()` trong `useEffect` (KHÔNG
 `payment_method` — hệ thống chỉ hỗ trợ COD, radio VNPay/Momo chỉ decorative
 (disabled, badge "Sắp ra mắt"). Lỗi 409 (thiếu tồn kho) hiện thẳng message
 thật từ Backend qua `lib/api-error.ts:extractApiErrorMessage()`. Sau khi đặt
-thành công: gọi TƯỜNG MINH `clearCart()` (Context không tự biết `POST /orders`
-đã xóa `cart_items`) rồi `router.push("/checkout/success?order_id=<id>")`.
+thành công: gọi `refreshCart()` (GET /cart, task "Sửa đồng bộ giỏ hàng sau
+checkout" - thay `clearCart()`/DELETE cũ) để đồng bộ badge Header (Context
+không tự biết `POST /orders` đã xóa `cart_items` trong transaction) rồi
+`router.push("/checkout/success?order_id=<id>")`. KHÔNG gửi DELETE /cart:
+Backend đã xóa rồi nên DELETE là THỪA + có race (khách thêm món ở tab khác
+trong khoảng đó, DELETE đến muộn xóa nhầm món mới); GET chỉ đọc, trả đúng
+trạng thái hiện tại. `clearCart` đã BỎ khỏi `CartContext` (chỉ dùng đúng chỗ
+này), thay bằng `refreshCart` (bọc `fetchCart` sẵn có).
 
 **Route xác nhận là `/checkout/success?order_id=<id>`, KHÔNG PHẢI
 `/orders/[id]/confirmation`** (có chủ đích) — đây là bước cuối nhất thời của
