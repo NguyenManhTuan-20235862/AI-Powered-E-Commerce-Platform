@@ -40,16 +40,19 @@ này: `cart_items` luôn thuộc về ĐÚNG 1 user (`user_id` cố định tron
 2 user khác nhau không bao giờ tranh chấp khóa `cart_items` của nhau.
 """
 
+import logging
 from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from app.models.cart import CartItem
-from app.models.order import Order, OrderItem, OrderStatus
+from app.models.order import Order, OrderItem, OrderStatus, Payment, PaymentStatus
 from app.models.product import Product
 from app.models.user import User
 from app.schemas.order import OrderCreate, OrderItemRead, OrderRead
+
+logger = logging.getLogger(__name__)
 
 # State machine cho PUT /orders/{id}/status (Admin, task 3.4.2) - transition
 # HỢP LỆ DUY NHẤT được phép qua endpoint này. Set rỗng = trạng thái CUỐI
@@ -82,6 +85,25 @@ class CancelNotAllowedError(Exception):
 class InvalidStatusTransitionError(Exception):
     """Chuyển trạng thái không hợp lệ theo `VALID_STATUS_TRANSITIONS` - router
     dịch sang 400."""
+
+
+class OrderAlreadyPaidError(Exception):
+    """Đơn đã thanh toán online THÀNH CÔNG (VNPay) - Customer KHÔNG tự hủy được
+    (cần hoàn tiền thủ công trước, auto-refund ngoài phạm vi đồ án) - router
+    dịch sang 409. Chỉ chặn đường Customer tự hủy (`cancel_order`); Admin vẫn
+    hủy được qua `update_order_status` (có thẩm quyền, tự xử lý hoàn tiền)."""
+
+
+def _has_successful_payment(db: Session, order_id: int) -> bool:
+    """True nếu đơn có 1 giao dịch thanh toán online đã `success` (chưa
+    `refunded`). Dùng để chặn Customer tự hủy đơn đã trả tiền + cảnh báo khi
+    Admin hủy đơn đã trả tiền (đối soát hoàn tiền thủ công)."""
+    return (
+        db.query(Payment)
+        .filter(Payment.order_id == order_id, Payment.status == PaymentStatus.success)
+        .first()
+        is not None
+    )
 
 
 def _to_order_item_read(item: OrderItem) -> OrderItemRead:
@@ -290,6 +312,17 @@ def cancel_order(db: Session, order: Order) -> None:
             f'Chỉ có thể hủy đơn ở trạng thái "pending" (đơn hiện tại: "{order.status.value}")'
         )
 
+    # Chặn Customer tự hủy đơn ĐÃ thanh toán online (VNPay success) - hủy sẽ
+    # hoàn kho nhưng tiền đã thu, tạo trạng thái "đã trả tiền cho đơn đã hủy"
+    # mà không có luồng hoàn tiền tự động. Yêu cầu liên hệ hỗ trợ (Admin hủy +
+    # hoàn tiền thủ công). Kiểm tra SAU khi đã khóa order (dưới db.refresh
+    # for_update) - nhất quán ảnh chụp trạng thái.
+    if _has_successful_payment(db, order.id):
+        raise OrderAlreadyPaidError(
+            "Đơn hàng đã được thanh toán online - không thể tự hủy. "
+            "Vui lòng liên hệ hỗ trợ để được hoàn tiền."
+        )
+
     _restock_order_items(db, order)
     order.status = OrderStatus.cancelled
     db.commit()
@@ -324,6 +357,15 @@ def update_order_status(db: Session, order: Order, new_status: OrderStatus) -> N
         )
 
     if new_status == OrderStatus.cancelled:
+        # Admin ĐƯỢC PHÉP hủy đơn đã thanh toán online (khác Customer, xem
+        # OrderAlreadyPaidError) - nhưng log cảnh báo để đối soát hoàn tiền
+        # thủ công (auto-refund ngoài phạm vi, xem docs/KNOWN_TODOS.md).
+        if _has_successful_payment(db, order.id):
+            logger.warning(
+                "Admin hủy đơn ĐÃ thanh toán online: order_id=%s - kho được hoàn nhưng "
+                "tiền đã thu, CẦN HOÀN TIỀN thủ công cho khách",
+                order.id,
+            )
         _restock_order_items(db, order)
 
     order.status = new_status

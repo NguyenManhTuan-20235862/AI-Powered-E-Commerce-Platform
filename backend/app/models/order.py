@@ -118,6 +118,17 @@ class Payment(Base):
     # unique=True - tránh xử lý trùng khi cổng thanh toán gọi callback nhiều
     # lần cho cùng 1 giao dịch (idempotency ở tầng DB, không chỉ ở code).
     transaction_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    # Số lần đã tạo URL thanh toán VNPay cho đơn này (mỗi lần bấm "Thanh toán"/
+    # "Thử lại" +1). Kết hợp với `id` để sinh `txn_ref` DUY NHẤT cho TỪNG LẦN
+    # thử - xem docstring payment_service.py (chống callback của lần thử CŨ tác
+    # động sang lần thử MỚI khi cùng 1 dòng Payment được retry).
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    # `vnp_TxnRef` của LẦN THỬ HIỆN TẠI (định dạng "{payment_id}A{attempt_count}",
+    # VD "5A2"). Callback tra ngược Payment theo CHÍNH giá trị này - callback
+    # mang `vnp_TxnRef` của lần thử đã bị thay thế (retry sau đó) sẽ KHÔNG khớp
+    # dòng nào -> bị từ chối là "stale". nullable=True: đơn COD/chưa từng khởi
+    # tạo VNPay chưa có giá trị. unique=True: đảm bảo idempotency ở tầng DB.
+    txn_ref: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     status: Mapped[PaymentStatus] = mapped_column(
         Enum(PaymentStatus, native_enum=True, length=20),

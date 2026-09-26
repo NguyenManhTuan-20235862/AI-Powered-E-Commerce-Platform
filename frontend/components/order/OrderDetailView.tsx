@@ -65,13 +65,16 @@ const STREAM_BANNER_LABEL: Record<string, string | null> = {
  * - Lỗi mạng/5xx khác: có nút "Thử lại" (gọi lại fetchOrder(), KHÔNG có ý
  *   nghĩa cho 403/404 - lỗi đó KHÔNG tự hết khi gọi lại).
  *
- * **Khối "Thanh toán"** (task "Quyết định và hoàn thiện thanh toán") - fetch
- * RIÊNG `GET /payments/{orderId}/status`, best-effort (404 = đơn COD, chưa
- * từng khởi tạo thanh toán online - KHÔNG hiện khối này, không phải lỗi).
- * Có nút "Thanh toán lại qua VNPay" khi `payment.status` đang "pending"/
- * "failed" (Backend cho retry dùng LẠI đúng 1 dòng Payment, xem
- * `payment_service.py`) - gọi lại `POST /payments/create` rồi điều hướng
- * CỨNG (`window.location.href`) sang `payment_url` VNPay trả về.
+ * **Khối "Thanh toán"** (task "Quyết định và hoàn thiện thanh toán", mở rộng
+ * ở task "Chốt các trường hợp lỗi và retry") - fetch RIÊNG
+ * `GET /payments/{orderId}/status`, best-effort (404 = chưa từng khởi tạo
+ * thanh toán online). Nút "Thanh toán qua VNPay" hiện cho MỌI đơn `pending`
+ * chưa thanh toán thành công - kể cả khi CHƯA có dòng Payment (đường phục hồi
+ * khi khởi tạo VNPay thất bại lúc checkout, #1) - nhãn thành "Thanh toán lại"
+ * nếu đã có giao dịch pending/failed (Backend retry dùng LẠI đúng 1 dòng
+ * Payment). Gọi `POST /payments/create` rồi điều hướng CỨNG
+ * (`window.location.href`) sang `payment_url`. Nút "Hủy đơn" bị ẩn khi đơn đã
+ * thanh toán thành công (Backend trả 409, #4b) - không hiện nút chỉ để lỗi.
  */
 export function OrderDetailView({ orderId }: { orderId: number }) {
   const [order, setOrder] = useState<Order | null>(null);
@@ -224,6 +227,14 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
 
   if (!order) return null;
 
+  // "Thanh toán qua VNPay" hiện cho MỌI đơn `pending` chưa thanh toán thành
+  // công - kể cả khi CHƯA có dòng Payment nào (đường phục hồi khi khởi tạo
+  // VNPay thất bại lúc checkout trước khi kịp tạo Payment, task "Chốt các
+  // trường hợp lỗi và retry" #1; cũng cho phép đơn COD chuyển sang trả online).
+  const paidSuccessfully = payment?.status === "success";
+  const canPayOnline =
+    order.status === "pending" && (payment === null || payment.status === "pending" || payment.status === "failed");
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-10">
       <Link href="/orders" className="mb-4 inline-block text-sm text-foreground-muted hover:text-foreground">
@@ -274,37 +285,49 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
           </div>
         </div>
 
-        {/* Chỉ hiện khi đơn CÓ giao dịch VNPay (`payment !== null`) - đơn COD
-            (chưa từng khởi tạo thanh toán online) KHÔNG hiện khối này, cùng
-            nguyên tắc "không bịa dữ liệu không có thật" xuyên suốt dự án. */}
-        {payment && (
+        {/* Hiện khi đơn CÓ giao dịch VNPay, HOẶC đơn `pending` còn có thể trả
+            online (kể cả chưa có dòng Payment - đường phục hồi #1). Đơn đã
+            giao/hủy và không có payment nào thì KHÔNG hiện (không bịa dữ liệu
+            không có thật, cùng nguyên tắc xuyên suốt dự án). */}
+        {(payment || canPayOnline) && (
           <div className="border-t border-border pt-4">
             <h2 className="mb-3 font-heading text-lg text-primary">Thanh toán</h2>
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-background p-4 text-sm">
               <div className="flex flex-col gap-1">
-                <span className="text-foreground-muted">
-                  Phương thức: <span className="font-semibold uppercase text-foreground">{payment.payment_method}</span>
-                </span>
-                <span
-                  className={`font-semibold ${
-                    payment.status === "success"
-                      ? "text-secondary"
-                      : payment.status === "failed"
-                        ? "text-error"
-                        : "text-foreground-secondary"
-                  }`}
-                >
-                  {PAYMENT_STATUS_LABEL[payment.status]}
-                </span>
+                {payment ? (
+                  <>
+                    <span className="text-foreground-muted">
+                      Phương thức:{" "}
+                      <span className="font-semibold uppercase text-foreground">{payment.payment_method}</span>
+                    </span>
+                    <span
+                      className={`font-semibold ${
+                        payment.status === "success"
+                          ? "text-secondary"
+                          : payment.status === "failed"
+                            ? "text-error"
+                            : "text-foreground-secondary"
+                      }`}
+                    >
+                      {PAYMENT_STATUS_LABEL[payment.status]}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-foreground-secondary">Đơn hàng chưa được thanh toán online.</span>
+                )}
               </div>
-              {(payment.status === "pending" || payment.status === "failed") && (
+              {canPayOnline && (
                 <button
                   type="button"
                   onClick={handlePayNow}
                   disabled={isPayingNow}
                   className="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-background transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isPayingNow ? "Đang chuyển hướng..." : "Thanh toán lại qua VNPay"}
+                  {isPayingNow
+                    ? "Đang chuyển hướng..."
+                    : payment
+                      ? "Thanh toán lại qua VNPay"
+                      : "Thanh toán qua VNPay"}
                 </button>
               )}
             </div>
@@ -335,7 +358,11 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
           </dl>
         </div>
 
-        {order.status === "pending" && (
+        {/* Ẩn nút "Hủy" khi đơn đã thanh toán online thành công - Customer
+            không tự hủy được (Backend trả 409, cần liên hệ hỗ trợ để hoàn
+            tiền, task "Chốt các trường hợp lỗi và retry" #4b) - không hiện nút
+            bấm vào chỉ để nhận lỗi, cùng nguyên tắc "không nút giả" của dự án. */}
+        {order.status === "pending" && !paidSuccessfully && (
           <div className="border-t border-border pt-4">
             <button
               type="button"

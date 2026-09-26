@@ -26,22 +26,50 @@ chi tiết đơn qua `GET /payments/{order_id}/status`), không tự động kh�
 cứng `order_service.VALID_STATUS_TRANSITIONS` đã test kỹ - ngoài phạm vi
 task này.
 
-## `vnp_TxnRef` = `Payment.id` (không sinh mã riêng)
+## `vnp_TxnRef` = "{payment.id}A{attempt_count}" (DUY NHẤT theo TỪNG LẦN THỬ)
 
-`payments.id` (auto-increment, duy nhất TOÀN HỆ THỐNG - dư thừa so với yêu
-cầu "duy nhất trong ngày" của VNPay) dùng LUÔN làm `vnp_TxnRef`, không cần
-sinh/lưu thêm cột nào. Callback tra ngược `Payment` bằng chính giá trị này.
+Trước đây `vnp_TxnRef = str(payment.id)` cố định - nhưng 1 dòng Payment được
+retry nhiều lần (reset "failed"->"pending"), tất cả các lần đều dùng CÙNG
+`vnp_TxnRef` -> callback của LẦN THỬ CŨ (đến trễ) có thể tác động sang lần thử
+MỚI (cùng ref, cùng số tiền, chữ ký vẫn hợp lệ). Sửa (task "Chốt các trường
+hợp lỗi và retry"): mỗi lần tạo URL tăng `attempt_count` và đặt `txn_ref =
+"{id}A{attempt}"` (VD "5A1", "5A2"...). Callback tra ngược Payment theo CHÍNH
+`txn_ref` HIỆN TẠI - callback mang ref của lần thử đã bị thay thế sẽ KHÔNG
+khớp dòng nào -> bị từ chối là "stale". Chỉ lần thử MỚI NHẤT được tin. `txn_ref`
+UNIQUE ở tầng DB (thêm cùng `attempt_count` qua migration b2c9d4e7f1a3). Cũng
+đúng hơn với spec VNPay (yêu cầu `vnp_TxnRef` duy nhất theo từng giao dịch).
 
 ## Chỉ cho retry khi Payment đang "pending" hoặc "failed"
 
 `payments.order_id` UNIQUE (quan hệ 1-1 THẬT theo DBML, không phải giới hạn
 tự đặt thêm) - 1 Order chỉ có ĐÚNG 1 dòng Payment. "Thử lại" (Customer bấm
 thanh toán VNPay lần nữa sau khi lần trước thất bại/bỏ dở) dùng LẠI CHÍNH
-dòng đó (reset "failed" -> "pending", tạo URL VNPay MỚI với CÙNG
-`vnp_TxnRef`) - không tạo dòng mới (vi phạm UNIQUE). "pending" (chưa có kết
+dòng đó (reset "failed" -> "pending", tạo URL VNPay MỚI với `vnp_TxnRef` MỚI
+- xem trên) - không tạo dòng mới (vi phạm UNIQUE). "pending" (chưa có kết
 quả) cũng cho tạo lại URL mới (VD link VNPay cũ hết hạn ~15 phút, hoặc user
 đóng tab giữa chừng). "success"/"refunded" (đã xong) -> `PaymentConflictError`
 (409), không cho thanh toán lại.
+
+## Khóa Order khi tạo giao dịch (chống 2 request create/retry đồng thời)
+
+`build_payment_url()` khóa Order (`SELECT ... FOR UPDATE`) TRƯỚC khi đọc/ghi
+Payment (cùng kỷ luật khóa như `checkout()`/`cancel_order()`). 2 request
+create/retry gần như đồng thời cho CÙNG 1 đơn sẽ serialize: request đầu tạo
+dòng Payment rồi commit (nhả khóa), request sau mới đọc -> thấy dòng đã có ->
+tái sử dụng (tăng attempt), KHÔNG đụng UNIQUE(order_id) gây 500. Đọc Payment
+cũng dùng `with_for_update()` để thấy đúng bản mới nhất đã commit (locking read
+đọc latest committed, không dính snapshot cũ của REPEATABLE READ).
+
+## Callback trên đơn ĐÃ HỦY - ghi nhận trung thực, KHÔNG hoàn kho lần 2
+
+Nếu callback THÀNH CÔNG đến SAU khi đơn đã bị hủy (kho đã hoàn lúc hủy):
+`process_callback()` VẪN ghi nhận `status=success` + `transaction_id` (KHÔNG
+mất dấu vết tiền VNPay đã thu), nhưng KHÔNG động vào đơn/không hoàn kho lần 2.
+Tình huống "order cancelled + payment success" chính là CỜ CẦN HOÀN TIỀN thủ
+công (auto-refund qua VNPay refund API ngoài phạm vi đồ án, xem
+docs/KNOWN_TODOS.md) - ghi log cảnh báo để Admin dễ đối soát. Khóa theo thứ tự
+Order -> Payment (CÙNG thứ tự `build_payment_url`) tránh deadlock giữa 1
+callback và 1 retry đồng thời.
 
 ## Callback: CHỈ tin dữ liệu ĐÃ QUA XÁC MINH CHỮ KÝ, đối chiếu `Payment.amount` lưu SẴN
 
@@ -66,6 +94,7 @@ cho CÙNG 1 giao dịch.
 
 import hashlib
 import hmac
+import logging
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote_plus
@@ -74,6 +103,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.order import Order, OrderStatus, Payment, PaymentStatus
+
+logger = logging.getLogger(__name__)
 
 # Response code VNPay coi là giao dịch THÀNH CÔNG - cả 2 field PHẢI cùng "00"
 # (vnp_ResponseCode: kết quả gọi API; vnp_TransactionStatus: kết quả giao
@@ -122,10 +153,17 @@ def build_payment_url(db: Session, order: Order, client_ip: str) -> tuple[Paymen
         raise PaymentGatewayNotConfiguredError(
             "Cổng thanh toán VNPay chưa được cấu hình (thiếu VNPAY_TMN_CODE/VNPAY_HASH_SECRET)"
         )
+
+    # Khóa Order TRƯỚC (serialize 2 request create/retry đồng thời + đọc status
+    # mới nhất) - xem docstring module. `with_for_update` cũng lấy đúng
+    # `total_amount` mới nhất đã commit.
+    db.refresh(order, with_for_update=True)
     if order.status == OrderStatus.cancelled:
         raise PaymentError("Đơn hàng đã bị hủy - không thể thanh toán")
 
-    payment = db.query(Payment).filter(Payment.order_id == order.id).one_or_none()
+    # `with_for_update()` - locking read thấy đúng dòng Payment mới nhất đã
+    # commit (kể cả do request đồng thời vừa tạo), tránh dính snapshot cũ.
+    payment = db.query(Payment).filter(Payment.order_id == order.id).with_for_update().one_or_none()
     if payment is None:
         payment = Payment(
             order_id=order.id,
@@ -134,7 +172,7 @@ def build_payment_url(db: Session, order: Order, client_ip: str) -> tuple[Paymen
             status=PaymentStatus.pending,
         )
         db.add(payment)
-        db.flush()  # payment.id có giá trị để dùng làm vnp_TxnRef, CHƯA commit
+        db.flush()  # payment.id có giá trị để dựng txn_ref, CHƯA commit
     elif payment.status == PaymentStatus.pending:
         pass  # cho tạo lại URL mới (link VNPay cũ có thể đã hết hạn) - giữ nguyên record
     elif payment.status == PaymentStatus.failed:
@@ -144,6 +182,11 @@ def build_payment_url(db: Session, order: Order, client_ip: str) -> tuple[Paymen
             f'Đơn hàng đã ở trạng thái thanh toán "{payment.status.value}" - không thể tạo giao dịch mới'
         )
 
+    # Mỗi lần tạo URL = 1 LẦN THỬ mới: tăng attempt + đổi txn_ref -> callback
+    # của lần thử CŨ (txn_ref cũ) không còn khớp dòng nào -> bị từ chối stale.
+    payment.attempt_count += 1
+    payment.txn_ref = f"{payment.id}A{payment.attempt_count}"
+
     params = {
         "vnp_Version": "2.1.0",
         "vnp_Command": "pay",
@@ -151,7 +194,7 @@ def build_payment_url(db: Session, order: Order, client_ip: str) -> tuple[Paymen
         # VNPay dùng đơn vị nhỏ nhất (x100) - KHÔNG có phần thập phân cho VND.
         "vnp_Amount": str(int(payment.amount * 100)),
         "vnp_CurrCode": "VND",
-        "vnp_TxnRef": str(payment.id),
+        "vnp_TxnRef": payment.txn_ref,
         "vnp_OrderInfo": f"Thanh toan don hang {order.id}",
         "vnp_OrderType": "other",
         "vnp_Locale": "vn",
@@ -195,15 +238,26 @@ def process_callback(db: Session, params: dict[str, str]) -> tuple[Payment | Non
     if not received_hash or not hmac.compare_digest(received_hash.lower(), expected_hash.lower()):
         return None, False
 
-    try:
-        payment_id = int(params.get("vnp_TxnRef", ""))
-    except ValueError:
+    txn_ref = params.get("vnp_TxnRef", "")
+    if not txn_ref:
         return None, False
 
-    payment = db.query(Payment).filter(Payment.id == payment_id).with_for_update().one_or_none()
+    # Đọc KHÔNG khóa để lấy order_id (BẤT BIẾN 1 khi đã set) - rồi khóa Order
+    # TRƯỚC, Payment SAU (CÙNG thứ tự order->payment như build_payment_url,
+    # tránh deadlock giữa callback và retry đồng thời). Không tìm thấy txn_ref
+    # = ref lạ HOẶC ref của lần thử đã bị retry thay thế -> từ chối stale.
+    payment = db.query(Payment).filter(Payment.txn_ref == txn_ref).one_or_none()
+    if payment is None:
+        return None, False
+
+    db.query(Order).filter(Order.id == payment.order_id).with_for_update().one()
+    # Đọc lại Payment DƯỚI KHÓA (theo txn_ref) - nếu 1 retry chen vào giữa lúc
+    # chờ khóa Order đã đổi txn_ref, lần đọc này trả None -> từ chối stale.
+    payment = db.query(Payment).filter(Payment.txn_ref == txn_ref).with_for_update().one_or_none()
     if payment is None:
         db.rollback()
         return None, False
+    order = db.get(Order, payment.order_id)
 
     try:
         callback_amount = Decimal(params.get("vnp_Amount", "0")) / 100
@@ -220,12 +274,22 @@ def process_callback(db: Session, params: dict[str, str]) -> tuple[Payment | Non
 
     response_code = params.get("vnp_ResponseCode", "")
     transaction_status = params.get("vnp_TransactionStatus", "")
+    is_success = response_code == _VNPAY_SUCCESS_CODE and transaction_status == _VNPAY_SUCCESS_CODE
     payment.transaction_id = params.get("vnp_TransactionNo") or None
-    payment.status = (
-        PaymentStatus.success
-        if response_code == _VNPAY_SUCCESS_CODE and transaction_status == _VNPAY_SUCCESS_CODE
-        else PaymentStatus.failed
-    )
+    payment.status = PaymentStatus.success if is_success else PaymentStatus.failed
+
+    # Callback THÀNH CÔNG trên đơn ĐÃ HỦY: ghi nhận trung thực (đã làm ở trên -
+    # status=success + transaction_id, KHÔNG mất dấu tiền), KHÔNG hoàn kho lần 2
+    # (kho đã hoàn lúc hủy). "cancelled + success" = cờ cần hoàn tiền thủ công.
+    if is_success and order is not None and order.status == OrderStatus.cancelled:
+        logger.warning(
+            "VNPay callback THÀNH CÔNG cho đơn ĐÃ HỦY: order_id=%s payment_id=%s transaction_id=%s "
+            "- tiền đã bị thu cho đơn không còn hiệu lực, CẦN HOÀN TIỀN thủ công",
+            order.id,
+            payment.id,
+            payment.transaction_id,
+        )
+
     db.commit()
     db.refresh(payment)
     return payment, True

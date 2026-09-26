@@ -455,6 +455,45 @@ tóm tắt các điểm KHÔNG tự đọc code suy ra được ở đây):
   tại sandbox.vnpayment.vn) - đây là giới hạn đã biết trước, không phải bỏ
   sót.
 
+**Chốt các trường hợp lỗi và retry của thanh toán** (task cùng tên) — hoàn
+thiện thêm cho VNPay ở trên (GIỮ NGUYÊN các quyết định đó), bịt các case
+lỗi/đồng thời còn hở:
+
+- **Mỗi LẦN THỬ có `vnp_TxnRef` RIÊNG** (`payments.attempt_count` +
+  `payments.txn_ref`, migration `b2c9d4e7f1a3`) — trước đây `vnp_TxnRef =
+  payment.id` cố định, retry (reset "failed"->"pending") dùng lại CÙNG ref nên
+  callback của lần thử CŨ đến trễ có thể tác động sang lần thử MỚI (cùng ref,
+  cùng số tiền, chữ ký vẫn hợp lệ). Giờ mỗi `build_payment_url()` tăng
+  `attempt_count`, đặt `txn_ref = "{id}A{attempt}"`; `process_callback()` tra
+  Payment theo `txn_ref` HIỆN TẠI — callback mang ref lần thử đã bị thay thế
+  KHÔNG khớp dòng nào -> từ chối stale, chỉ lần thử MỚI NHẤT được tin (đúng
+  hơn với spec VNPay: `vnp_TxnRef` nên duy nhất theo từng giao dịch).
+- **Tạo giao dịch khóa Order** (`SELECT ... FOR UPDATE`, cùng kỷ luật
+  `checkout()`) — 2 request create/retry đồng thời cho cùng đơn serialize:
+  request đầu tạo Payment rồi commit, request sau tái sử dụng (tăng attempt),
+  KHÔNG đụng UNIQUE(order_id) gây 500. `process_callback()` khóa theo thứ tự
+  Order -> Payment (CÙNG thứ tự `build_payment_url`) tránh deadlock giữa 1
+  callback và 1 retry đồng thời.
+- **Callback THÀNH CÔNG đến SAU khi đơn đã hủy** — ghi nhận TRUNG THỰC
+  (`status=success` + `transaction_id`, KHÔNG mất dấu tiền VNPay đã thu),
+  KHÔNG hoàn kho lần 2 (kho đã hoàn lúc hủy), KHÔNG "hồi sinh" đơn. Log cảnh
+  báo "CẦN HOÀN TIỀN thủ công". "order cancelled + payment success" = cờ đối
+  soát hoàn tiền thủ công.
+- **Hủy đơn ĐÃ thanh toán online**: Customer tự hủy -> CHẶN 409
+  (`order_service.OrderAlreadyPaidError`, "liên hệ hỗ trợ để hoàn tiền");
+  Admin vẫn hủy được qua `PUT /orders/{id}/status` (có thẩm quyền, hoàn tiền
+  thủ công) + log cảnh báo. `OrderDetailView.tsx` ẩn nút "Hủy đơn" khi đã
+  thanh toán thành công (không hiện nút chỉ để nhận 409, cùng nguyên tắc
+  "không nút giả").
+- **Đường phục hồi khi khởi tạo VNPay thất bại** (#1): `OrderDetailView.tsx`
+  hiện nút "Thanh toán qua VNPay" cho MỌI đơn `pending` chưa thanh toán thành
+  công — KỂ CẢ chưa có dòng Payment (VD `POST /payments/create` từng 503 lúc
+  checkout trước khi kịp tạo Payment; cũng cho đơn COD chuyển sang trả
+  online). Nhãn thành "Thanh toán lại" nếu đã có giao dịch pending/failed.
+- **Auto-refund (hoàn tiền tự động) NGOÀI PHẠM VI** — cần VNPay refund API +
+  UI Admin, xem `docs/KNOWN_TODOS.md` #31; hiện chỉ log + hiện trạng thái ở
+  chi tiết đơn để đối soát thủ công.
+
 `lib/axios.ts` (interceptor gắn JWT, CLIENT), `lib/api-server.ts` (fetch phía
 SERVER, task 4.2.1 — xem `API_INTERNAL_URL` bên dưới), `lib/auth.ts` (token
 localStorage), `hooks/useAuth.ts`, `types/` (`common.ts` — envelope

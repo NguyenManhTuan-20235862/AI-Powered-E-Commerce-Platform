@@ -76,7 +76,7 @@
 | POST | `/orders` | Tạo đơn hàng từ giỏ hàng (transaction trừ tồn kho, có xử lý race condition) | 🔒 Auth | Customer |
 | GET | `/orders` | Danh sách đơn hàng của user hiện tại (lọc được theo trạng thái qua `?status=`, task 4.3.3) | 🔒 Auth | Customer |
 | GET | `/orders/{order_id}` | Chi tiết 1 đơn hàng | 🔒 Auth | Customer (chủ đơn), Admin |
-| PUT | `/orders/{order_id}/cancel` | Hủy đơn hàng (nếu đủ điều kiện) | 🔒 Auth | Customer (chủ đơn) |
+| PUT | `/orders/{order_id}/cancel` | Hủy đơn hàng (chỉ khi `pending`, hoàn kho). 400 nếu không ở trạng thái cho phép hủy; **409 nếu đơn đã thanh toán online thành công** (Customer không tự hủy được, cần liên hệ hỗ trợ hoàn tiền - task "Chốt lỗi/retry" #4b) | 🔒 Auth | Customer (chủ đơn) |
 | GET | `/orders/admin` | Danh sách toàn bộ đơn hàng (filter theo trạng thái, ngày, `?user_id=` cho 1 user cụ thể; tìm theo mã đơn/tên khách hàng qua `?search=`, task 4.4.2) | 🔒 Auth | Admin |
 | PUT | `/orders/{order_id}/status` | Cập nhật trạng thái đơn hàng (xác nhận, đang giao, đã giao) | 🔒 Auth | Admin |
 
@@ -93,10 +93,20 @@ field `payment_method`) - VNPay là lựa chọn thanh toán online BỔ SUNG, t
 docs/DATABASE_SCHEMA.md). Chi tiết thiết kế đầy đủ: docstring
 `app/services/payment_service.py`.
 
+**Chốt lỗi/retry (task "Chốt các trường hợp lỗi và retry của thanh toán")**:
+- **Mỗi lần thử có `vnp_TxnRef` riêng** (`"{payment_id}A{attempt_count}"`) -
+  callback của lần thử CŨ (đến trễ sau khi khách bấm thử lại) không khớp
+  `txn_ref` hiện tại -> bị từ chối stale, chỉ lần thử MỚI NHẤT được tin.
+- **Tạo giao dịch khóa Order** (`SELECT ... FOR UPDATE`) - 2 request
+  create/retry đồng thời serialize, không tạo Payment trùng/không 500.
+- **Callback THÀNH CÔNG trên đơn ĐÃ HỦY**: ghi nhận trung thực (success +
+  `transaction_id`), KHÔNG hoàn kho lần 2, log cảnh báo cần hoàn tiền thủ
+  công (auto-refund ngoài phạm vi, xem docs/KNOWN_TODOS.md #31).
+
 | Method | Path | Mô tả | Quyền truy cập | Role |
 |--------|------|-------|-----------------|------|
-| POST | `/payments/create` | Body: `order_id` (int). Tạo giao dịch VNPay cho 1 đơn ĐÃ TỒN TẠI (đúng chủ đơn), trả về `payment_url` redirect sang VNPay. 409 nếu đơn đã thanh toán/hoàn tiền, 503 nếu chưa cấu hình `VNPAY_TMN_CODE`/`VNPAY_HASH_SECRET` | 🔒 Auth | Customer (chủ đơn) |
-| GET | `/payments/callback` | Target của `vnp_ReturnUrl` (trình duyệt khách tự điều hướng tới sau khi thanh toán trên VNPay) - xác thực bằng chữ ký `vnp_SecureHash` (HMAC-SHA512), đối chiếu `vnp_Amount` với số tiền đã lưu sẵn lúc tạo giao dịch (KHÔNG tin số tiền/trạng thái callback tự khai), idempotent (gọi lại nhiều lần cho cùng giao dịch không xử lý lại). Response là REDIRECT (303) sang Frontend `/checkout/payment-result?order_id=<id>&status=success\|failed` (hoặc `status=invalid` nếu không xác minh được), KHÔNG PHẢI JSON | 🔓 Public (xác thực bằng chữ ký) | - |
+| POST | `/payments/create` | Body: `order_id` (int). Tạo (hoặc tái tạo cho lần thử mới) giao dịch VNPay cho 1 đơn ĐÃ TỒN TẠI (đúng chủ đơn), trả về `payment_url` redirect sang VNPay. Khóa Order chống 2 request đồng thời; mỗi lần tạo tăng `attempt_count` + đổi `vnp_TxnRef`. 409 nếu đơn đã thanh toán/hoàn tiền, 400 nếu đơn đã hủy, 503 nếu chưa cấu hình `VNPAY_TMN_CODE`/`VNPAY_HASH_SECRET` | 🔒 Auth | Customer (chủ đơn) |
+| GET | `/payments/callback` | Target của `vnp_ReturnUrl` (trình duyệt khách tự điều hướng tới sau khi thanh toán trên VNPay) - xác thực bằng chữ ký `vnp_SecureHash` (HMAC-SHA512), tra Payment theo `vnp_TxnRef` (ref lần thử cũ đã bị thay thế -> từ chối), đối chiếu `vnp_Amount` với số tiền đã lưu sẵn lúc tạo giao dịch (KHÔNG tin số tiền/trạng thái callback tự khai), idempotent (gọi lại nhiều lần cho cùng giao dịch không xử lý lại). Response là REDIRECT (303) sang Frontend `/checkout/payment-result?order_id=<id>&status=success\|failed` (hoặc `status=invalid` nếu không xác minh được), KHÔNG PHẢI JSON | 🔓 Public (xác thực bằng chữ ký) | - |
 | GET | `/payments/{order_id}/status` | Kiểm tra trạng thái thanh toán của 1 đơn hàng - 404 nếu đơn chưa có giao dịch VNPay nào (VD đơn COD) | 🔒 Auth | Customer (chủ đơn), Admin |
 
 ---

@@ -288,21 +288,50 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
   });
 
   describe("Khối 'Thanh toán' (task \"Quyết định và hoàn thiện thanh toán\")", () => {
-    it("đơn COD (chưa từng khởi tạo VNPay, 404) - KHÔNG hiện khối Thanh toán", async () => {
-      mockOrderOutcomes(10, { ok: true, data: okResponse(baseOrder) });
+    it("đơn KHÔNG pending & không có payment (VD delivered COD, 404) - KHÔNG hiện khối Thanh toán", async () => {
+      mockOrderOutcomes(10, { ok: true, data: okResponse({ ...baseOrder, status: "delivered" }) });
       render(<OrderDetailView orderId={10} />);
 
       await screen.findByText("Đơn hàng #10");
       expect(screen.queryByText("Thanh toán")).not.toBeInTheDocument();
     });
 
-    it("payment status=success - hiện 'Đã thanh toán', KHÔNG có nút thanh toán lại", async () => {
+    it("đơn pending chưa có payment (404) - hiện nút 'Thanh toán qua VNPay' (đường phục hồi #1); bấm gọi POST /payments/create, điều hướng cứng", async () => {
+      const user = userEvent.setup();
+      const originalLocation = window.location;
+      // @ts-expect-error - test-only: jsdom location là accessor, phải xóa trước khi gán lại.
+      delete window.location;
+      // @ts-expect-error - test-only stub, chỉ cần field href.
+      window.location = { href: "" };
+
+      mockOrderOutcomes(10, { ok: true, data: okResponse(baseOrder) }); // payments -> 404 (chưa có Payment)
+      mockPost.mockResolvedValue({
+        data: { success: true, message: "", data: { payment_id: 2, order_id: 10, payment_url: "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?vnp_TxnRef=2A1" } },
+      });
+
+      render(<OrderDetailView orderId={10} />);
+      await screen.findByText("Đơn hàng #10");
+
+      // Nhãn "Thanh toán qua VNPay" (KHÔNG phải "Thanh toán lại") vì chưa có giao dịch nào.
+      const payButton = await screen.findByRole("button", { name: "Thanh toán qua VNPay" });
+      await user.click(payButton);
+
+      await waitFor(() => expect(mockPost).toHaveBeenCalledWith("/payments/create", { order_id: 10 }));
+      expect(window.location.href).toBe("https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?vnp_TxnRef=2A1");
+
+      window.location = originalLocation;
+    });
+
+    it("payment status=success - hiện 'Đã thanh toán', KHÔNG có nút thanh toán, và ẩn cả nút Hủy đơn hàng (#4b)", async () => {
       mockOrderOutcomesWithPayment(10, paymentResponse("success"), { ok: true, data: okResponse(baseOrder) });
       render(<OrderDetailView orderId={10} />);
 
       await screen.findByText("Đơn hàng #10");
       expect(await screen.findByText("Đã thanh toán")).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Thanh toán lại qua VNPay" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Thanh toán/ })).not.toBeInTheDocument();
+      // Đơn pending nhưng ĐÃ thanh toán online -> nút Hủy bị ẩn (Backend chặn
+      // 409, không hiện nút chỉ để nhận lỗi).
+      expect(screen.queryByRole("button", { name: "Hủy đơn hàng" })).not.toBeInTheDocument();
     });
 
     it("payment status=failed - hiện 'Thanh toán thất bại' + nút thanh toán lại; bấm gọi đúng POST /payments/create, điều hướng cứng", async () => {
