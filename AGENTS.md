@@ -201,6 +201,12 @@ mới:
   breadcrumb ĐẦY ĐỦ tổ tiên (VD "Điện tử > Điện thoại") cho `CategoryTable.tsx`,
   và nhãn thụt lề cho dropdown "Danh mục cha" của `CategoryFormModal.tsx`.
 
+Quản lý kho Admin: `/admin/inventory/{adjust,adjustments,low-stock}`. Điều chỉnh
+delta và lịch sử trong cùng transaction, khóa Product như checkout; key duy nhất
+theo Admin chống retry trùng. Hủy/đổi trạng thái khóa lại Order trước khi kiểm tra,
+rồi khóa sản phẩm theo ID tăng dần. Lịch sử chỉ điều chỉnh Admin, không checkout.
+Seed demo đơn hàng cũng khóa/refresh sản phẩm trước khi tính tồn còn lại.
+
 **Quản lý người dùng Admin** (`/admin/users`, hoàn thiện thêm ở task "Hoàn
 thiện quản lý tài khoản Admin") — `UserTable.tsx` ẩn nút "Khóa"/"Mở khóa" ở
 hàng `role === "admin"` (chỉ hiện "—"), khớp ĐÚNG giới hạn Backend thật:

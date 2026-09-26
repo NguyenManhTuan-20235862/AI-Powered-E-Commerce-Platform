@@ -32,7 +32,7 @@ Dự án cá nhân (solo) — thực hiện trong 13 tuần.
 ├── backend/          # FastAPI service (API, AI Agent, kết nối MySQL/MongoDB/Redis)
 ├── frontend/          # Next.js app
 ├── docs/              # Tài liệu thiết kế, API spec, sơ đồ kiến trúc
-├── docker-compose.yml # (sẽ bổ sung) điều phối các service
+├── docker-compose.yml # điều phối 6 service (mysql/mongodb/redis/backend/frontend/product-sync-scheduler)
 ├── .gitignore
 └── README.md
 ```
