@@ -43,7 +43,7 @@ type PaymentMethod = "cod" | "vnpay";
 export function CheckoutForm() {
   const router = useRouter();
   const { user } = useAuth();
-  const { items, totalCount, totalPrice, clearCart } = useCart();
+  const { items, totalCount, totalPrice, refreshCart } = useCart();
   const [serverError, setServerError] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cod");
   const {
@@ -78,14 +78,15 @@ export function CheckoutForm() {
       });
       const orderId = data.data.id;
       // Đơn hàng ĐÃ tạo thành công tại đây - Backend đã xóa cart_items thật
-      // lúc checkout() - CartContext KHÔNG tự biết điều này nên vẫn cần gọi
-      // clearCart() để đồng bộ lại badge Header/state cục bộ, NHƯNG tách
-      // riêng try/catch (không await chặn luồng bên dưới): nếu chính request
-      // DELETE /cart bị lỗi mạng thoáng qua, KHÔNG được hiện lại "đặt hàng
-      // thất bại" (đơn đã tạo xong thật - lỗi dọn dẹp cache cục bộ không
-      // phải lỗi đặt hàng, badge Header sẽ tự đúng lại ở lần fetch giỏ hàng
-      // kế tiếp).
-      clearCart().catch(() => {});
+      // NGAY trong transaction checkout() - CartContext KHÔNG tự biết nên cần
+      // đồng bộ lại badge Header/state cục bộ. Dùng refreshCart() (GET /cart,
+      // chỉ ĐỌC) thay vì DELETE /cart: Backend đã xóa rồi nên gửi thêm DELETE
+      // là THỪA + có race thật (nếu khách thêm món mới ở tab khác trong khoảng
+      // này, DELETE đến muộn sẽ xóa nhầm cả món mới). GET trả đúng trạng thái
+      // hiện tại (rỗng, hoặc chỉ còn món vừa thêm ở tab khác - không xóa nhầm).
+      // Tách .catch (không await chặn luồng): lỗi đồng bộ badge KHÔNG phải lỗi
+      // đặt hàng (đơn đã tạo xong thật), badge tự đúng ở lần fetch kế tiếp.
+      refreshCart().catch(() => {});
 
       if (paymentMethod === "vnpay") {
         try {

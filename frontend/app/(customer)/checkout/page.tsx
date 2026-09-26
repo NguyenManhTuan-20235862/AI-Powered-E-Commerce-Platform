@@ -17,10 +17,11 @@ import { useCart } from "@/context/CartContext";
  *
  * `hasCheckedCart` - guard CHỈ chạy ĐÚNG 1 LẦN ngay sau khi `CartContext`
  * load xong, KHÔNG re-check mỗi khi `items` đổi. Bug thật đã tự gặp lúc
- * verify: `CheckoutForm` gọi `clearCart()` SAU KHI đặt hàng thành công (xóa
- * giỏ hàng thật) rồi mới `router.push("/checkout/success?...")` - nếu effect
- * này chạy lại theo `items.length` (dependency cũ), `items` vừa về 0 do
- * `clearCart()` sẽ khiến effect tưởng nhầm "giỏ hàng trống" và
+ * verify: `CheckoutForm` gọi `refreshCart()` SAU KHI đặt hàng thành công (giỏ
+ * đã bị Backend xóa trong transaction checkout) rồi mới
+ * `router.push("/checkout/success?...")` - nếu effect này chạy lại theo
+ * `items.length` (dependency cũ), `items` vừa về 0 do `refreshCart()` sẽ
+ * khiến effect tưởng nhầm "giỏ hàng trống" và
  * `router.replace("/cart")`, ĐUA (race) với điều hướng sang trang xác nhận
  * và THẮNG - kết quả sai: đặt hàng thành công nhưng bị đá về `/cart` thay vì
  * trang xác nhận. Chỉ check 1 lần lúc mount/load xong tránh đúng race này.
