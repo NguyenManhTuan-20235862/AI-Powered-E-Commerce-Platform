@@ -676,6 +676,29 @@ bộ) — cùng nguyên tắc `OrdersView.tsx`/`OrderCard.tsx`, đảm bảo l�
 `PUT /orders/{id}/cancel` như `OrderCard.tsx`) set thẳng state từ response
 `OrderRead` trả về, không cần refetch riêng.
 
+**Streaming AI `/ws/chat`** (task 6.1.1–6.1.2) — đã thay placeholder bằng
+LLM thật qua `ChatOpenAI`, đổi provider chỉ bằng nhóm biến `LLM_*` (dev dùng
+Ollama OpenAI-compatible, production có thể dùng OpenAI). Wire protocol server
+→ client là `connected` → nhiều event `chunk` → `done`; nếu LLM lỗi/không có
+token đầu trong 12 giây thì gửi `error` và GIỮ kết nối để user thử lại. Frontend
+ghép các chunk vào cùng một message assistant và khóa input bằng `isStreaming`
+cho tới `done`/`error`/disconnect. Không đặt timeout cho toàn bộ stream; độ dài
+đã chặn bởi `LLM_MAX_TOKENS`.
+
+Ngữ cảnh mỗi lượt gồm `SYSTEM_PROMPT` + tối đa 20 message `user`/`assistant`
+mới nhất của đúng `session_id`, đọc từ MongoDB theo thứ tự mới→cũ rồi đảo lại
+cũ→mới. Router PHẢI lưu message user thành công TRƯỚC khi gọi
+`stream_agent_reply()`; service đọc lại message hiện tại từ history và KHÔNG
+nhận/nối thêm `user_message` riêng — nếu nối lại sẽ gửi cùng câu hỏi hai lần
+cho LLM (regression test ở `tests/test_chat_service.py`). Chỉ lưu message
+assistant sau khi stream hoàn tất; lỗi lưu assistant sau khi client đã nhận đủ
+chỉ ghi log, không báo thất bại giả cho user.
+
+AI hiện mới hội thoại thuần: CHƯA có RAG/tool truy vấn catalog thật, nên
+`SYSTEM_PROMPT` buộc không bịa giá/tồn kho và hướng khách xem catalog. REST
+`POST /ai/chat`, history/log APIs vẫn `501`; rate limit Redis vẫn là task kế
+tiếp.
+
 **`GET /notifications/orders/stream`** (SSE, task 5.2.1) — xác thực qua JWT ở
 query param (`?token=...`), cùng lý do/cách WebSocket (`EventSource` cũng
 không cho set custom header) nhưng ĐƠN GIẢN HƠN: lỗi auth raise thẳng

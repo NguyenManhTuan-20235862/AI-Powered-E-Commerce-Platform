@@ -131,7 +131,12 @@ docs/DATABASE_SCHEMA.md). Chi tiết thiết kế đầy đủ: docstring
 | GET | `/ai/chat/history` | Lịch sử hội thoại của user (từ MongoDB ChatLog) | 🔒 Auth | Customer |
 | GET | `/ai/chat/logs` | Xem log hội thoại toàn hệ thống (phục vụ tune prompt) | 🔒 Auth | Admin |
 
-**Giới hạn tần suất (task 8.3):** endpoint `/ws/chat` và `/ai/chat` áp dụng rate limit theo user (Redis) — ví dụ tối đa N tin nhắn/phút, trả lỗi `429 Too Many Requests` khi vượt ngưỡng.
+**Trạng thái triển khai:** `/ws/chat` (WebSocket) đã stream LLM thật (task
+6.1.1–6.1.2, xem `CLAUDE.md`/`AGENTS.md` mục "Streaming AI `/ws/chat`"). 3
+endpoint REST còn lại — `POST /ai/chat` (fallback), `GET /ai/chat/history`,
+`GET /ai/chat/logs` — hiện vẫn trả `501` (chưa triển khai).
+
+**Giới hạn tần suất (task 8.3):** endpoint `/ws/chat` và `/ai/chat` áp dụng rate limit theo user (Redis) — ví dụ tối đa N tin nhắn/phút, trả lỗi `429 Too Many Requests` khi vượt ngưỡng. Rate limit này CHƯA triển khai (mới khai báo trong spec).
 
 ---
 
