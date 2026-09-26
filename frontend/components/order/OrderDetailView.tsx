@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { OrderStatusBadge } from "@/components/order/OrderStatusBadge";
+import { useAuth } from "@/hooks/useAuth";
 import { useOrderStatusStream } from "@/hooks/useOrderStatusStream";
 import { extractApiErrorMessage } from "@/lib/api-error";
 import { api } from "@/lib/axios";
@@ -75,14 +76,40 @@ const STREAM_BANNER_LABEL: Record<string, string | null> = {
  * Payment). Gọi `POST /payments/create` rồi điều hướng CỨNG
  * (`window.location.href`) sang `payment_url`. Nút "Hủy đơn" bị ẩn khi đơn đã
  * thanh toán thành công (Backend trả 409, #4b) - không hiện nút chỉ để lỗi.
+ * Lỗi tải trạng thái thanh toán THẬT (khác 404) hiện khối lỗi + "Thử lại"
+ * (task "Hoàn thiện trải nghiệm chi tiết đơn hàng cho Admin" #4), không nuốt
+ * thành "không có giao dịch".
+ *
+ * **Phân biệt vai trò** (task "Hoàn thiện trải nghiệm chi tiết đơn hàng cho
+ * Admin") - Admin dùng CHUNG component này (link từ `/admin/orders`) nhưng là
+ * READ-ONLY: KHÔNG mở SSE (Backend 403 non-Customer), KHÔNG hiện nút Hủy/Thanh
+ * toán (API `require_role(customer)`), back link về `/admin/orders`. Admin đổi
+ * trạng thái ở danh sách (`OrderStatusSelect`), không thao tác tại đây.
  */
 export function OrderDetailView({ orderId }: { orderId: number }) {
+  // Phân biệt vai trò (task "Hoàn thiện trải nghiệm chi tiết đơn hàng cho
+  // Admin") - Admin vào CHUNG component này (link "Xem chi tiết" ở
+  // components/admin/OrderTable.tsx trỏ /orders/{id}, Backend GET /orders/{id}
+  // cho Admin xem mọi đơn) nhưng KHÔNG dùng được các hành động/SSE dành riêng
+  // Customer. Admin ở đây là READ-ONLY: xem đơn + trạng thái thanh toán, thao
+  // tác đổi trạng thái vẫn làm ở danh sách (/admin/orders, OrderStatusSelect).
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const isAdmin = user?.role === "admin";
+  // SSE `/notifications/orders/stream` chỉ dành Customer (Backend
+  // authenticate_sse trả 403 cho non-Customer) - chỉ mở khi ĐÃ xác định là
+  // Customer, tránh mở EventSource để nhận 403 rồi hiện banner "mất kết nối"
+  // vô nghĩa cho Admin.
+  const canStream = !isAuthLoading && user?.role === "customer";
+
   const [order, setOrder] = useState<Order | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [payment, setPayment] = useState<Payment | null>(null);
+  const [paymentError, setPaymentError] = useState(false);
   const [isPayingNow, setIsPayingNow] = useState(false);
+
+  const backHref = isAdmin ? "/admin/orders" : "/orders";
 
   const fetchOrder = useCallback(async () => {
     setLoadState("loading");
@@ -116,25 +143,31 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
     fetchOrder();
   }, [fetchOrder]);
 
-  // Trạng thái thanh toán VNPay (task "Quyết định và hoàn thiện thanh toán")
-  // - fetch RIÊNG, best-effort, KHÔNG ảnh hưởng `loadState` chính của đơn
-  // hàng (404 ở đây nghĩa là "đơn COD, chưa từng khởi tạo thanh toán online"
-  // - hoàn toàn BÌNH THƯỜNG, không phải lỗi cần hiện gì cho Customer, chỉ
-  // đơn giản là KHÔNG hiện khối "Thanh toán" bên dưới).
-  useEffect(() => {
-    let active = true;
-    api
-      .get<ApiResponse<Payment>>(`/payments/${orderId}/status`)
-      .then(({ data }) => {
-        if (active) setPayment(data.data);
-      })
-      .catch(() => {
-        if (active) setPayment(null);
-      });
-    return () => {
-      active = false;
-    };
+  // Trạng thái thanh toán (task "Quyết định và hoàn thiện thanh toán", phân
+  // biệt lỗi ở task "Hoàn thiện trải nghiệm chi tiết đơn hàng cho Admin") -
+  // fetch RIÊNG, KHÔNG ảnh hưởng `loadState` chính. PHÂN BIỆT:
+  // - 404: đơn chưa có giao dịch online (COD, hoặc chưa khởi tạo) - BÌNH
+  //   THƯỜNG, không hiện khối "Thanh toán", KHÔNG phải lỗi.
+  // - lỗi khác (500/mạng): TRƯỚC ĐÂY bị nuốt thành `payment=null` -> trông
+  //   giống "không có giao dịch" (sai). Giờ set `paymentError` để hiện lỗi rõ
+  //   + nút thử lại (áp dụng cả Customer lẫn Admin).
+  const fetchPayment = useCallback(async () => {
+    setPaymentError(false);
+    try {
+      const { data } = await api.get<ApiResponse<Payment>>(`/payments/${orderId}/status`);
+      setPayment(data.data);
+    } catch (err) {
+      setPayment(null);
+      // 404 = chưa có giao dịch (bình thường); các lỗi khác mới là lỗi tải thật.
+      if (!(err instanceof AxiosError && err.response?.status === 404)) {
+        setPaymentError(true);
+      }
+    }
   }, [orderId]);
+
+  useEffect(() => {
+    fetchPayment();
+  }, [fetchPayment]);
 
   async function handlePayNow() {
     setIsPayingNow(true);
@@ -178,7 +211,8 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
   );
 
   const { status: streamStatus, retryNow: retryStream } = useOrderStatusStream({
-    enabled: loadState === "ready" || order !== null,
+    // Chỉ mở SSE cho Customer (Backend từ chối 403 non-Customer) - xem canStream.
+    enabled: canStream && (loadState === "ready" || order !== null),
     onOrderStatus: handleOrderStatusEvent,
   });
 
@@ -192,7 +226,7 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
     return (
       <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 px-4 py-16 text-center">
         <p className="text-foreground">Bạn không có quyền xem đơn hàng này.</p>
-        <Link href="/orders" className="text-sm font-semibold text-primary hover:underline">
+        <Link href={backHref} className="text-sm font-semibold text-primary hover:underline">
           &larr; Quay lại danh sách đơn hàng
         </Link>
       </div>
@@ -203,7 +237,7 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
     return (
       <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 px-4 py-16 text-center">
         <p className="text-foreground">Không tìm thấy đơn hàng này.</p>
-        <Link href="/orders" className="text-sm font-semibold text-primary hover:underline">
+        <Link href={backHref} className="text-sm font-semibold text-primary hover:underline">
           &larr; Quay lại danh sách đơn hàng
         </Link>
       </div>
@@ -232,16 +266,22 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
   // VNPay thất bại lúc checkout trước khi kịp tạo Payment, task "Chốt các
   // trường hợp lỗi và retry" #1; cũng cho phép đơn COD chuyển sang trả online).
   const paidSuccessfully = payment?.status === "success";
+  // Các hành động dưới đây gọi API `require_role(customer)` (PUT
+  // /orders/{id}/cancel, POST /payments/create) - Admin bấm sẽ nhận 403 nên
+  // ẩn hẳn cho Admin (không hiện nút chỉ để lỗi). Admin đổi trạng thái ở
+  // /admin/orders (OrderStatusSelect), không cần thao tác ở đây.
   const canPayOnline =
-    order.status === "pending" && (payment === null || payment.status === "pending" || payment.status === "failed");
+    !isAdmin &&
+    order.status === "pending" &&
+    (payment === null || payment.status === "pending" || payment.status === "failed");
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10">
-      <Link href="/orders" className="mb-4 inline-block text-sm text-foreground-muted hover:text-foreground">
+      <Link href={backHref} className="mb-4 inline-block text-sm text-foreground-muted hover:text-foreground">
         &larr; Quay lại danh sách đơn hàng
       </Link>
 
-      {STREAM_BANNER_LABEL[streamStatus] && (
+      {canStream && STREAM_BANNER_LABEL[streamStatus] && (
         <div className="mb-4 flex items-center justify-between gap-2 rounded-lg bg-error-container px-4 py-3 text-error">
           <p className="text-sm font-semibold">{STREAM_BANNER_LABEL[streamStatus]}</p>
           {streamStatus === "retry-exhausted" && (
@@ -289,9 +329,24 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
             online (kể cả chưa có dòng Payment - đường phục hồi #1). Đơn đã
             giao/hủy và không có payment nào thì KHÔNG hiện (không bịa dữ liệu
             không có thật, cùng nguyên tắc xuyên suốt dự án). */}
-        {(payment || canPayOnline) && (
+        {(payment || canPayOnline || paymentError) && (
           <div className="border-t border-border pt-4">
             <h2 className="mb-3 font-heading text-lg text-primary">Thanh toán</h2>
+            {paymentError ? (
+              // Lỗi tải trạng thái thanh toán THẬT (khác 404 "chưa có giao
+              // dịch") - hiện rõ + nút thử lại, không nuốt thành "không có
+              // giao dịch" như trước (task Admin #4).
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-error-container p-4 text-sm">
+                <span className="text-error">Không tải được trạng thái thanh toán.</span>
+                <button
+                  type="button"
+                  onClick={fetchPayment}
+                  className="shrink-0 rounded-full border border-error px-4 py-1.5 text-sm font-semibold text-error hover:bg-error-container"
+                >
+                  Thử lại
+                </button>
+              </div>
+            ) : (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-background p-4 text-sm">
               <div className="flex flex-col gap-1">
                 {payment ? (
@@ -331,6 +386,7 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
                 </button>
               )}
             </div>
+            )}
           </div>
         )}
 
@@ -362,7 +418,7 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
             không tự hủy được (Backend trả 409, cần liên hệ hỗ trợ để hoàn
             tiền, task "Chốt các trường hợp lỗi và retry" #4b) - không hiện nút
             bấm vào chỉ để nhận lỗi, cùng nguyên tắc "không nút giả" của dự án. */}
-        {order.status === "pending" && !paidSuccessfully && (
+        {order.status === "pending" && !paidSuccessfully && !isAdmin && (
           <div className="border-t border-border pt-4">
             <button
               type="button"
