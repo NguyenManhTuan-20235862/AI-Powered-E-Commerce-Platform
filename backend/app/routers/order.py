@@ -173,6 +173,7 @@ def get_order(
     responses={
         **auth_responses(forbidden=True, not_found=True),
         400: {"description": "Đơn hàng không ở trạng thái cho phép hủy"},
+        409: {"description": "Đơn đã thanh toán online - không thể tự hủy"},
     },
 )
 def cancel_order(
@@ -197,6 +198,8 @@ def cancel_order(
 
     try:
         order_service.cancel_order(db, order)
+    except order_service.OrderAlreadyPaidError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except order_service.CancelNotAllowedError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

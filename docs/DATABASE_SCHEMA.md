@@ -193,6 +193,8 @@ xóa product gần như không xảy ra trong vận hành bình thường).
 | `order_id` | `BIGINT` | NOT NULL, UNIQUE, FK → `orders.id` | Đơn hàng được thanh toán (quan hệ 1-1) |
 | `payment_method` | `VARCHAR(50)` | NOT NULL | `vnpay`, `momo`... |
 | `transaction_id` | `VARCHAR(255)` | UNIQUE, NULLABLE | Mã giao dịch từ cổng thanh toán — NULL cho tới khi cổng thanh toán trả về (bản ghi tạo trước với `status='pending'`) |
+| `attempt_count` | `INT` | NOT NULL, DEFAULT `0` | Số lần đã tạo URL thanh toán VNPay cho đơn (migration `b2c9d4e7f1a3`) — mỗi lần "Thanh toán"/"Thử lại" +1, kết hợp với `id` sinh `txn_ref` duy nhất theo từng lần thử |
+| `txn_ref` | `VARCHAR(32)` | UNIQUE, NULLABLE | `vnp_TxnRef` của LẦN THỬ HIỆN TẠI, dạng `"{payment_id}A{attempt_count}"` (migration `b2c9d4e7f1a3`) — callback tra ngược Payment theo cột này; ref của lần thử đã bị thay thế (retry) không khớp → bị từ chối stale. NULL cho đơn chưa từng khởi tạo VNPay |
 | `amount` | `DECIMAL(12,2)` | NOT NULL | Số tiền thanh toán |
 | `status` | `ENUM('pending','success','failed','refunded')` | NOT NULL, DEFAULT `'pending'` | Trạng thái thanh toán |
 | `created_at` | `DATETIME` | NOT NULL, DEFAULT `CURRENT_TIMESTAMP` | Thời điểm tạo bản ghi thanh toán |
@@ -201,6 +203,7 @@ xóa product gần như không xảy ra trong vận hành bình thường).
 ### Index
 - `UNIQUE INDEX` trên `order_id` — đảm bảo quan hệ 1-1 với `orders`
 - `UNIQUE INDEX` trên `transaction_id` — tránh xử lý trùng khi cổng thanh toán gọi callback nhiều lần cho cùng 1 giao dịch (idempotency ở tầng DB, không chỉ ở code)
+- `UNIQUE INDEX` trên `txn_ref` (`uq_payments_txn_ref`, migration `b2c9d4e7f1a3`) — mỗi lần thử thanh toán có 1 `vnp_TxnRef` duy nhất; callback tra ngược Payment theo cột này (chống callback của lần thử cũ tác động lần mới)
 
 ### FOREIGN KEY / ON DELETE
 - `order_id → orders.id`: **`ON DELETE RESTRICT`**
