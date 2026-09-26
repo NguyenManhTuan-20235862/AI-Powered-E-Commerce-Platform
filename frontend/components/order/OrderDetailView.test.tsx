@@ -41,14 +41,28 @@ vi.mock("next/navigation", () => ({
 // hooks/useOrderStatusStream.test.ts (vòng đời EventSource/backoff/token hết
 // hạn) - ở đây CHỈ cần xác nhận OrderDetailView TRUYỀN ĐÚNG onOrderStatus và
 // PHẢN ỨNG đúng khi hook gọi callback đó (lọc đúng order_id, refetch) - mock
-// thẳng hook, không cần dựng lại FakeEventSource.
+// thẳng hook, không cần dựng lại FakeEventSource. Cũng capture `enabled` để
+// xác nhận SSE KHÔNG bật cho Admin (task "Hoàn thiện trải nghiệm chi tiết đơn
+// hàng cho Admin" #1).
 let capturedOnOrderStatus: ((event: OrderStatusEvent) => void) | null = null;
+let capturedStreamEnabled: boolean | null = null;
 const retryStreamMock = vi.fn();
 vi.mock("@/hooks/useOrderStatusStream", () => ({
-  useOrderStatusStream: (opts: { onOrderStatus: (event: OrderStatusEvent) => void }) => {
+  useOrderStatusStream: (opts: { enabled: boolean; onOrderStatus: (event: OrderStatusEvent) => void }) => {
     capturedOnOrderStatus = opts.onOrderStatus;
+    capturedStreamEnabled = opts.enabled;
     return { status: "open", retryNow: retryStreamMock };
   },
+}));
+
+// useAuth (AuthContext) - OrderDetailView đọc role để phân quyền Admin vs
+// Customer. Mặc định Customer (mọi test cũ giữ nguyên hành vi); test Admin đổi
+// `currentAuthUser` sang role admin trước khi render (pattern reassign giống
+// `currentSearchParams` ở OrdersView.test.tsx).
+type AuthUser = { id: number; role: "customer" | "admin" };
+let currentAuthUser: AuthUser = { id: 1, role: "customer" };
+vi.mock("@/hooks/useAuth", () => ({
+  useAuth: () => ({ user: currentAuthUser, isAuthenticated: true, isLoading: false, logout: vi.fn() }),
 }));
 
 const baseOrder: Order = {
@@ -152,6 +166,8 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
   beforeEach(() => {
     vi.spyOn(window, "confirm");
     capturedOnOrderStatus = null;
+    capturedStreamEnabled = null;
+    currentAuthUser = { id: 1, role: "customer" }; // mặc định Customer
   });
 
   afterEach(() => {
@@ -374,6 +390,59 @@ describe("OrderDetailView (hoàn thiện /orders/[id])", () => {
       await user.click(await screen.findByRole("button", { name: "Thanh toán lại qua VNPay" }));
 
       await waitFor(() => expect(mockToastError).toHaveBeenCalledWith('Đơn hàng đã ở trạng thái thanh toán "success"'));
+    });
+
+    it("lỗi tải trạng thái thanh toán (500, KHÁC 404) - hiện lỗi + nút Thử lại, KHÔNG nuốt thành 'không có giao dịch' (#4)", async () => {
+      const user = userEvent.setup();
+      let paymentCall = 0;
+      mockGet.mockImplementation((url: string) => {
+        if (url === "/payments/10/status") {
+          paymentCall += 1;
+          if (paymentCall === 1) return Promise.reject(httpError(500, "Lỗi máy chủ"));
+          return Promise.resolve(paymentResponse("pending")); // lần Thử lại thành công
+        }
+        return Promise.resolve(okResponse(baseOrder));
+      });
+
+      render(<OrderDetailView orderId={10} />);
+      await screen.findByText("Đơn hàng #10");
+
+      expect(await screen.findByText("Không tải được trạng thái thanh toán.")).toBeInTheDocument();
+      // KHÔNG bị nuốt thành "không có giao dịch" (bug cũ: mọi lỗi -> payment=null).
+      expect(screen.queryByText("Đơn hàng chưa được thanh toán online.")).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Thử lại" }));
+      await waitFor(() =>
+        expect(screen.queryByText("Không tải được trạng thái thanh toán.")).not.toBeInTheDocument(),
+      );
+    });
+  });
+
+  describe("Admin xem chi tiết đơn (read-only, task \"Hoàn thiện trải nghiệm chi tiết đơn hàng cho Admin\")", () => {
+    it("Admin - KHÔNG bật SSE, ẩn nút Hủy + Thanh toán, back link về /admin/orders", async () => {
+      currentAuthUser = { id: 99, role: "admin" };
+      mockOrderOutcomes(10, { ok: true, data: okResponse(baseOrder) }); // đơn pending, payments -> 404
+
+      render(<OrderDetailView orderId={10} />);
+      await screen.findByText("Đơn hàng #10");
+
+      expect(capturedStreamEnabled).toBe(false); // SSE Customer-only, không mở cho Admin (Backend 403)
+      expect(screen.queryByRole("button", { name: "Hủy đơn hàng" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Thanh toán/ })).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /Quay lại danh sách đơn hàng/ })).toHaveAttribute("href", "/admin/orders");
+    });
+
+    it("Admin - khối Thanh toán hiện READ-ONLY khi đơn có giao dịch (trạng thái, KHÔNG có nút)", async () => {
+      currentAuthUser = { id: 99, role: "admin" };
+      mockOrderOutcomesWithPayment(10, paymentResponse("failed"), { ok: true, data: okResponse(baseOrder) });
+
+      render(<OrderDetailView orderId={10} />);
+      await screen.findByText("Đơn hàng #10");
+
+      // Payment failed + đơn pending, nhưng Admin KHÔNG có nút "Thanh toán lại"
+      // (API POST /payments/create require_role customer) - chỉ xem trạng thái.
+      expect(await screen.findByText("Thanh toán thất bại")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Thanh toán/ })).not.toBeInTheDocument();
     });
   });
 });

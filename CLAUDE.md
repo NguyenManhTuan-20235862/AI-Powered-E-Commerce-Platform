@@ -676,6 +676,25 @@ bộ) — cùng nguyên tắc `OrdersView.tsx`/`OrderCard.tsx`, đảm bảo l�
 `PUT /orders/{id}/cancel` như `OrderCard.tsx`) set thẳng state từ response
 `OrderRead` trả về, không cần refetch riêng.
 
+**Phân biệt vai trò ở `OrderDetailView`** (task "Hoàn thiện trải nghiệm chi
+tiết đơn hàng cho Admin") — Admin vào CHUNG component này (link "Xem chi tiết"
+ở `components/admin/OrderTable.tsx` trỏ `/orders/{id}`; Backend `GET
+/orders/{id}` cho Admin xem mọi đơn) nhưng là READ-ONLY, phân quyền qua
+`useAuth().user.role`: (1) KHÔNG mở SSE (`enabled` gồm điều kiện
+`canStream = role === "customer"` - Backend `notification.py:authenticate_sse`
+trả 403 cho non-Customer, tránh mở `EventSource` để nhận 403 rồi hiện banner
+"mất kết nối realtime" vô nghĩa); (2) ẩn nút "Hủy đơn"/"Thanh toán VNPay" (API
+`require_role(customer)`, Admin đổi trạng thái ở `/admin/orders` qua
+`OrderStatusSelect`, KHÔNG thao tác ở trang chi tiết); (3) back link về
+`/admin/orders` thay vì `/orders`. **Lỗi tải `GET /payments/{id}/status`** giờ
+PHÂN BIỆT 404 (đơn chưa có giao dịch online - bình thường, không hiện khối
+thanh toán) với lỗi THẬT (500/mạng → khối lỗi đỏ + nút "Thử lại"), KHÔNG còn
+nuốt MỌI lỗi thành `payment=null` khiến server lỗi trông giống "không có giao
+dịch" (sửa cho CẢ 2 vai trò). Ghi chú: Admin xem `/orders/[id]` vẫn nằm trong
+`(customer)/layout.tsx` nên thấy Header/Footer/ChatWidget Customer - hệ quả
+dùng chung route-group, CHƯA tách `/admin/orders/[id]` riêng (chủ ý, tránh
+thay đổi cấu trúc lớn).
+
 **Streaming AI `/ws/chat`** (task 6.1.1–6.1.2) — đã thay placeholder bằng
 LLM thật qua `ChatOpenAI`, đổi provider chỉ bằng nhóm biến `LLM_*` (dev dùng
 Ollama OpenAI-compatible, production có thể dùng OpenAI). Wire protocol server
